@@ -1,8 +1,16 @@
-import { forwardRef } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
-import { TextInput } from 'react-native-paper';
+import { forwardRef, type ReactNode, type Ref } from 'react';
+import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { TextInput, type TextInputProps } from 'react-native-paper';
 import { useAppTheme } from '../theme/AppThemeContext';
 import { radius, spacing } from '../theme/tokens';
+
+type Props = TextInputProps & {
+  error?: string | boolean;
+  helperText?: string;
+  style?: StyleProp<ViewStyle>;
+  right?: ReactNode;
+  left?: ReactNode;
+};
 
 // Drop-in replacement for Paper's TextInput that bakes in our theme
 // props. Eliminates the 5-line `theme={{ colors: {...} }}` block that
@@ -20,8 +28,8 @@ const ThemedTextInput = forwardRef(function ThemedTextInput(
     right,
     left,
     ...rest
-  },
-  ref
+  }: Props,
+  ref: Ref<unknown>
 ) {
   const { theme } = useAppTheme();
   const styles = createStyles(theme);
@@ -29,7 +37,10 @@ const ThemedTextInput = forwardRef(function ThemedTextInput(
   return (
     <View style={[styles.wrap, style]}>
       <TextInput
-        ref={ref}
+        // Paper's TextInput ref type is the union of TextInput and
+        // its command-handle object. The forwardRef from this
+        // wrapper is typed loosely to allow any of those.
+        ref={ref as never}
         mode={mode}
         label={label}
         value={value}
@@ -70,7 +81,7 @@ const ThemedTextInput = forwardRef(function ThemedTextInput(
   );
 });
 
-function createStyles(theme) {
+function createStyles(theme: { surfaceRaised: string }) {
   return StyleSheet.create({
     wrap: { marginBottom: spacing.md },
     input: {

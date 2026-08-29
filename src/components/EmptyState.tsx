@@ -1,7 +1,17 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import * as React from 'react';
+import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAppTheme } from '../theme/AppThemeContext';
 import { radius, spacing, type } from '../theme/tokens';
+
+type Props = {
+  icon?: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
+  title?: string;
+  message?: string;
+  actionLabel?: string;
+  onAction?: () => void;
+  style?: StyleProp<ViewStyle>;
+};
 
 // Friendly empty-state placeholder. Replaces bare "No logs yet" text
 // and gives a clear CTA when one is relevant.
@@ -12,7 +22,7 @@ export default function EmptyState({
   actionLabel,
   onAction,
   style,
-}) {
+}: Props) {
   const { theme } = useAppTheme();
   const styles = createStyles(theme);
 

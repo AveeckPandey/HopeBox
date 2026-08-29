@@ -1,4 +1,4 @@
-import { Component } from 'react';
+import { Component, type ReactNode, type ErrorInfo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAppTheme } from '../theme/AppThemeContext';
@@ -18,17 +18,21 @@ import { logger } from '../services/logger';
 // The boundary re-mounts its children when the user taps "Reload",
 // so a transient error (e.g. a failed fetch) doesn't permanently
 // brick the screen.
-export default class ErrorBoundary extends Component {
-  constructor(props) {
+
+type Props = { children: ReactNode };
+type State = { error: Error | null };
+
+export default class ErrorBoundary extends Component<Props, State> {
+  constructor(props: Props) {
     super(props);
     this.state = { error: null };
   }
 
-  static getDerivedStateFromError(error) {
+  static getDerivedStateFromError(error: Error): State {
     return { error };
   }
 
-  componentDidCatch(error, info) {
+  componentDidCatch(error: Error, info: ErrorInfo) {
     // P42: report uncaught errors to Sentry directly (not via
     // logger) so the boundary still reports when the logger
     // itself is in a broken state. Dynamic require keeps the
@@ -58,7 +62,7 @@ export default class ErrorBoundary extends Component {
   }
 }
 
-function ErrorScreen({ error, onReload }) {
+function ErrorScreen({ error, onReload }: { error: Error; onReload: () => void }) {
   const { theme } = useAppTheme();
   const styles = createStyles(theme);
   return (

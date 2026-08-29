@@ -8,7 +8,7 @@ export const spacing = {
   lg: 16,
   xl: 24,
   xxl: 32,
-};
+} as const;
 
 export const radius = {
   sm: 8,
@@ -16,7 +16,7 @@ export const radius = {
   lg: 18,
   xl: 24,
   pill: 999,
-};
+} as const;
 
 export const type = {
   // `display` is the hero heading on Dashboard / Screen screens.
@@ -34,7 +34,7 @@ export const type = {
     letterSpacing: 1.5,
     textTransform: 'uppercase',
   },
-};
+} as const;
 
 export const elevation = {
   card: {
@@ -55,7 +55,7 @@ export const elevation = {
     shadowRadius: 0,
     elevation: 0,
   },
-};
+} as const;
 
 export const layout = {
   // Cap content width on tablets for readability
@@ -63,4 +63,4 @@ export const layout = {
   tabBarHeight: 64,
   fabSize: 56,
   minTouchTarget: 44,
-};
+} as const;

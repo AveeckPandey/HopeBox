@@ -1,12 +1,19 @@
-import { StyleSheet, Text, View } from 'react-native';
+import * as React from 'react';
+import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAppTheme } from '../theme/AppThemeContext';
 import { radius, spacing, type } from '../theme/tokens';
 import { statusTone } from '../theme/StatusContext';
 
+type Props = {
+  status: string;
+  size?: 'sm' | 'md';
+  style?: StyleProp<ViewStyle>;
+};
+
 // Colored pill that conveys a box's status with both an icon and color
 // (so it's not color-only, addressing the accessibility gap).
-export default function StatusBadge({ status, size = 'md', style }) {
+export default function StatusBadge({ status, size = 'md', style }: Props) {
   const { theme } = useAppTheme();
   const tone = statusTone(status, theme);
   const styles = createStyles(theme);
@@ -26,7 +33,11 @@ export default function StatusBadge({ status, size = 'md', style }) {
       accessibilityLabel={`Status: ${tone.label}`}
     >
       <MaterialCommunityIcons
-        name={tone.icon}
+        // The statusContext returns a string for the icon name;
+        // MaterialCommunityIcons accepts the full string union but
+        // the type narrowing on the existing Tone type makes it
+        // arrive as a plain string. Cast to the accepted shape.
+        name={tone.icon as React.ComponentProps<typeof MaterialCommunityIcons>['name']}
         size={size === 'sm' ? 12 : 14}
         color={tone.resolvedColor}
       />

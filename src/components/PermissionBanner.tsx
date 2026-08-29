@@ -6,6 +6,7 @@ import { useLanguage } from '../contexts/LanguageContext';
 import {
   acknowledgePermissionError,
   subscribeToPermissionErrors,
+  type PermissionErrorEvent,
 } from '../hooks/reportPermissionError';
 import { spacing, type } from '../theme/tokens';
 
@@ -24,7 +25,7 @@ export default function PermissionBanner() {
   const { theme } = useAppTheme();
   const { t: tAll } = useLanguage();
   const tCommon = tAll('common');
-  const [event, setEvent] = useState(null);
+  const [event, setEvent] = useState<PermissionErrorEvent | null>(null);
   const [translateY] = useState(() => new Animated.Value(-120));
 
   useEffect(() => {
@@ -37,7 +38,7 @@ export default function PermissionBanner() {
         damping: 24,
       }).start();
     });
-    return unsubscribe;
+    return () => { unsubscribe(); };
   }, [translateY]);
 
   const dismiss = () => {
