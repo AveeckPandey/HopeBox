@@ -20,7 +20,7 @@ export default function OfflineBanner() {
   const { theme } = useAppTheme();
   const { isOffline } = useNetwork();
   const { t: tAll } = useLanguage();
-  const t = tAll('common');
+  const t = tAll('common', 'scope') as { offline?: string };
   const slide = useRef(new Animated.Value(0));
 
   useEffect(() => {

@@ -1,6 +1,6 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { subscribeCommodities, seedDefaultCommoditiesIfEmpty } from '../services/commodities';
-import { subscribeTemplates, seedDefaultTemplateIfEmpty } from '../services/boxTemplates';
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { subscribeCommodities, seedDefaultCommoditiesIfEmpty, type Commodity } from '../services/commodities';
+import { subscribeTemplates, seedDefaultTemplateIfEmpty, type BoxTemplate } from '../services/boxTemplates';
 import { logger } from '../services/logger';
 
 // Live cache of /commodities and /config/boxTemplates, exposed via
@@ -10,21 +10,35 @@ import { logger } from '../services/logger';
 // The first time a fresh org opens the app, the provider seeds the
 // default commodity set + the "Standard Food Box" template. After
 // that, the seeder is a no-op.
-const CommoditiesContext = createContext({
+
+type CommoditiesValue = {
+  commodities: Commodity[];
+  byId: Record<string, Commodity>;
+  loading: boolean;
+};
+
+const CommoditiesContext = createContext<CommoditiesValue>({
   commodities: [],
   byId: {},
   loading: true,
 });
 
-const TemplatesContext = createContext({
+type TemplatesValue = {
+  templates: BoxTemplate[];
+  defaultTemplate: BoxTemplate | null;
+  loading: boolean;
+  error: unknown;
+};
+
+const TemplatesContext = createContext<TemplatesValue>({
   templates: [],
   defaultTemplate: null,
   loading: true,
   error: null,
 });
 
-export function CommoditiesProvider({ children }) {
-  const [commodities, setCommodities] = useState([]);
+export function CommoditiesProvider({ children }: { children: ReactNode }) {
+  const [commodities, setCommodities] = useState<Commodity[]>([]);
   const [loading, setLoading] = useState(true);
   // `error` is reserved for a future "show banner" path. Today the
   // subscribeCommodities callback swallows failures and returns
@@ -42,14 +56,14 @@ export function CommoditiesProvider({ children }) {
       } catch (err) {
         // Silent: an org with no admin yet will fail this — the
         // admin seeds it on first login.
-        logger.logWarning('CommoditiesContext/seed', err.message);
+        logger.logWarning('CommoditiesContext/seed', (err as { message?: string })?.message || String(err));
       }
     })();
 
     const unsubscribe = subscribeCommodities((items) => {
       if (cancelled) return;
       // Hide soft-deleted rows.
-      setCommodities(items.filter((c) => !c._deleted));
+      setCommodities(items.filter((c) => !(c as Commodity & { _deleted?: boolean })._deleted));
       setLoading(false);
     });
 
@@ -60,7 +74,7 @@ export function CommoditiesProvider({ children }) {
   }, []);
 
   const byId = useMemo(() => {
-    const map = {};
+    const map: Record<string, Commodity> = {};
     commodities.forEach((c) => { map[c.id] = c; });
     return map;
   }, [commodities]);
@@ -80,16 +94,16 @@ export function CommoditiesProvider({ children }) {
 // Templates are coupled to commodities (a template references
 // commodityIds), so they live in the same provider. Splitting
 // contexts here would only complicate the wiring.
-function TemplatesProvider({ children }) {
-  const [templates, setTemplates] = useState([]);
+function TemplatesProvider({ children }: { children: ReactNode }) {
+  const [templates, setTemplates] = useState<BoxTemplate[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const unsubscribe = subscribeTemplates((items) => {
-      setTemplates(items.filter((t) => !t._deleted));
+      setTemplates(items.filter((t) => !(t as BoxTemplate & { _deleted?: boolean })._deleted));
       setLoading(false);
     });
-    return unsubscribe;
+    return () => { unsubscribe(); };
   }, []);
 
   const defaultTemplate = useMemo(
@@ -98,7 +112,7 @@ function TemplatesProvider({ children }) {
   );
 
   const value = useMemo(
-    () => ({ templates, defaultTemplate, loading }),
+    () => ({ templates, defaultTemplate, loading, error: null }),
     [templates, defaultTemplate, loading]
   );
 

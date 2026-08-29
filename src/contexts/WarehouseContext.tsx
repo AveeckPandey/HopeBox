@@ -1,18 +1,27 @@
-import { createContext, useContext, useEffect, useRef, useState } from "react";
-import { collection, onSnapshot, addDoc, Timestamp } from "firebase/firestore";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode, type Dispatch, type SetStateAction } from "react";
+import { collection, onSnapshot, addDoc, Timestamp, type DocumentData } from "firebase/firestore";
 import { db } from "../services/firebase";
 import { firestoreOnError } from "../hooks/useFirestoreSubscription";
 
-const WarehouseContext = createContext({
+type Warehouse = { id: string } & Record<string, unknown>;
+
+type WarehouseValue = {
+  warehouses: Warehouse[];
+  currentWarehouse: Warehouse | null;
+  setCurrentWarehouse: Dispatch<SetStateAction<Warehouse | null>>;
+  addWarehouse: (name: string, location?: string) => Promise<string>;
+};
+
+const WarehouseContext = createContext<WarehouseValue>({
   warehouses: [],
   currentWarehouse: null,
   setCurrentWarehouse: () => {},
-  addWarehouse: async () => {}
+  addWarehouse: async () => ""
 });
 
-export function WarehouseProvider({ children }) {
-  const [warehouses, setWarehouses] = useState([]);
-  const [currentWarehouse, setCurrentWarehouse] = useState(null);
+export function WarehouseProvider({ children }: { children: ReactNode }) {
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [currentWarehouse, setCurrentWarehouse] = useState<Warehouse | null>(null);
   // Mirror the current value into a ref so the subscription callback
   // can read the latest without re-subscribing on every change. The
   // mirror lives in an effect (rather than inline during render) to
@@ -27,7 +36,7 @@ export function WarehouseProvider({ children }) {
     const unsubscribe = onSnapshot(
       collection(db, "warehouses"),
       (snapshot) => {
-        const data = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+        const data: Warehouse[] = snapshot.docs.map((d) => ({ id: d.id, ...(d.data() as DocumentData) }));
         setWarehouses(data);
         // Promote the first warehouse only when none is selected. Reading
         // the ref (not state) keeps the snapshot handler stable.
@@ -37,10 +46,10 @@ export function WarehouseProvider({ children }) {
       },
       (err) => firestoreOnError('WarehouseContext', err)
     );
-    return () => unsubscribe();
+    return () => { unsubscribe(); };
   }, []);
 
-  const addWarehouse = async (name, location = "") => {
+  const addWarehouse = async (name: string, location = "") => {
     const docRef = await addDoc(collection(db, "warehouses"), {
       name,
       location,

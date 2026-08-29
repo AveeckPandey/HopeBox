@@ -24,7 +24,7 @@ import { spacing, type } from '../theme/tokens';
 export default function PermissionBanner() {
   const { theme } = useAppTheme();
   const { t: tAll } = useLanguage();
-  const tCommon = tAll('common');
+  const tCommon = tAll('common', 'scope') as { permissionDeniedTitle?: string; permissionDeniedMessage?: string; dismiss?: string };
   const [event, setEvent] = useState<PermissionErrorEvent | null>(null);
   const [translateY] = useState(() => new Animated.Value(-120));
 

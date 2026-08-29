@@ -1,16 +1,18 @@
-import { createContext, useContext, useEffect, useState, useCallback, useMemo } from "react";
+import { createContext, useContext, useEffect, useState, useCallback, useMemo, type ReactNode } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { strings } from "../i18n/strings";
 import { merged as hiStrings } from "../i18n/strings.hi";
 
 const LANGUAGE_KEY = "hopebox-language";
 
+type Language = "en" | "hi";
+
 // Single source of truth for all user-facing copy in the app.
 // Languages are loaded from the `strings` catalog. When a locale map
 // is added, register it under LANGUAGE_KEY in a `loaders` table and
 // the rest of the app keeps working unchanged.
 
-const loaders = {
+const loaders: Record<Language, () => unknown> = {
   en: () => strings,
   // P51: real Hindi catalog. Missing keys fall back to English via
   // the deep merge in `strings.hi.js` so partial translations are
@@ -18,26 +20,40 @@ const loaders = {
   hi: () => hiStrings,
 };
 
-const LanguageContext = createContext({
+type LanguageValue = {
+  language: Language;
+  setLanguage: (lang: Language) => Promise<void>;
+  // `t` is overloaded. The two-arg form `t('common', 'scope')` returns
+  // the entire scope object (typed as Record). The single-arg form
+  // `t('auth.signIn')` returns the string at the dotted path.
+  t: (scopeOrPath: string, maybeKey?: string) => unknown;
+  tf: (path: string, params?: Record<string, string | number>) => string;
+};
+
+const LanguageContext = createContext<LanguageValue>({
   language: "en",
-  setLanguage: () => {},
-  t: (key) => key,
+  // eslint-disable-next-line @typescript-eslint/no-empty-function
+  setLanguage: async () => {},
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  t: ((key: string) => key) as any,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  tf: (key: string) => key as any,
 });
 
-export function LanguageProvider({ children }) {
-  const [language, setLanguageState] = useState("en");
+export function LanguageProvider({ children }: { children: ReactNode }) {
+  const [language, setLanguageState] = useState<Language>("en");
 
   useEffect(() => {
     const loadLanguage = async () => {
       const stored = await AsyncStorage.getItem(LANGUAGE_KEY);
-      if (stored && loaders[stored]) {
+      if (stored && (stored === "en" || stored === "hi")) {
         setLanguageState(stored);
       }
     };
     loadLanguage();
   }, []);
 
-  const setLanguage = async (lang) => {
+  const setLanguage = async (lang: Language) => {
     if (!loaders[lang]) return;
     setLanguageState(lang);
     await AsyncStorage.setItem(LANGUAGE_KEY, lang);
@@ -48,27 +64,27 @@ export function LanguageProvider({ children }) {
   //   t('auth', 'signIn')           // scope + key (returns the scope object)
   // `language` is closed-over so the function changes identity when
   // the user switches locale and React re-renders consumers.
-  const catalog = loaders[language] ? loaders[language]() : strings;
+  const catalog = (loaders[language] ? loaders[language]() : strings) as Record<string, unknown>;
 
   const t = useCallback(
-    (scopeOrPath, maybeKey) => {
-      if (maybeKey === undefined) {
-        // Flat dotted-path lookup, e.g. t('auth.signIn')
-        const segments = String(scopeOrPath).split(".");
-        let cursor = catalog;
-        for (const seg of segments) {
-          if (cursor && typeof cursor === "object" && seg in cursor) {
-            cursor = cursor[seg];
-          } else {
-            return scopeOrPath; // fall back to the key itself
-          }
-        }
-        return cursor;
+    (scopeOrPath: string, maybeKey?: string) => {
+      if (maybeKey === 'scope') {
+        // Two-arg form: return the whole scope object so call sites can
+        // do `const t = tAll('auth', 'scope'); t.signIn`.
+        const scope = catalog[scopeOrPath];
+        return (scope || {}) as Record<string, unknown>;
       }
-      // Two-arg form: return the whole scope object so call sites can
-      // do `const t = tAll('auth'); t.signIn`.
-      const scope = catalog[scopeOrPath];
-      return scope || {};
+      // Flat dotted-path lookup, e.g. t('auth.signIn')
+      const segments = String(scopeOrPath).split(".");
+      let cursor: unknown = catalog;
+      for (const seg of segments) {
+        if (cursor && typeof cursor === "object" && seg in (cursor as Record<string, unknown>)) {
+          cursor = (cursor as Record<string, unknown>)[seg];
+        } else {
+          return scopeOrPath; // fall back to the key itself
+        }
+      }
+      return cursor;
     },
     [catalog]
   );
@@ -81,9 +97,9 @@ export function LanguageProvider({ children }) {
   // missing params are left as the literal `{{name}}` so the
   // developer can spot the bug in dev.
   const tf = useCallback(
-    (path, params) => {
-      const raw = t(path);
-      if (typeof raw !== "string") return raw;
+    (path: string, params?: Record<string, string | number>) => {
+      const raw = t(path) as unknown;
+      if (typeof raw !== "string") return "";
       if (!params) return raw;
       return raw.replace(/\{\{\s*(\w+)\s*\}\}/g, (m, name) =>
         Object.prototype.hasOwnProperty.call(params, name) ? String(params[name]) : m
