@@ -11,6 +11,7 @@ import {
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { logger } from './logger';
+import { firestoreOnError } from '../hooks/useFirestoreSubscription';
 
 // /commodities/{commodityId}
 //
@@ -153,7 +154,10 @@ export function subscribeCommodities(callback) {
       callback(items);
     },
     (err) => {
-      logger.logWarning('commodities/subscribe', err.message);
+      firestoreOnError('services/commodities/subscribe', err);
+      // Stay forgiving on this path: the UI seeds from defaults on
+      // first launch, so an empty array keeps the app usable even
+      // if the subscription can't be established (e.g. offline).
       callback([]);
     }
   );

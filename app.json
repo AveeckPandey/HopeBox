@@ -47,7 +47,14 @@
       ],
       "expo-font",
       "expo-sharing",
-      "expo-status-bar"
+      "expo-status-bar",
+      [
+        "sentry-expo",
+        {
+          "organization": "HOPEBOX_ORG",
+          "project": "hopebox"
+        }
+      ]
     ],
     "experiments": {
       "reactCompiler": false
@@ -59,7 +66,8 @@
       "firebaseStorageBucket": "${EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET}",
       "firebaseMessagingSenderId": "${EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID}",
       "firebaseAppId": "${EXPO_PUBLIC_FIREBASE_APP_ID}",
-      "firebaseMeasurementId": "${EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID}"
+      "firebaseMeasurementId": "${EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID}",
+      "sentryDsn": "${EXPO_PUBLIC_SENTRY_DSN}"
     }
   }
 }

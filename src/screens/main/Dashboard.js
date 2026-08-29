@@ -23,6 +23,7 @@ import { logAction } from '../../services/audit';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { snackbar } from '../../hooks/useSnackbar';
 import { safeIcon } from '../../services/commodities';
+import { firestoreOnError } from '../../hooks/useFirestoreSubscription';
 
 import ScreenHeader from '../../components/ScreenHeader';
 import SurfaceCard from '../../components/SurfaceCard';
@@ -40,6 +41,7 @@ export default function Dashboard({ navigation }) {
   const { defaultTemplate } = useTemplates();
   const { t: tAll } = useLanguage();
   const t = tAll('dashboard');
+  const tCommon = tAll('common');
 
   const [inventory, setInventory] = useState({});
   const [boxes, setBoxes] = useState([]);
@@ -48,31 +50,35 @@ export default function Dashboard({ navigation }) {
 
   useEffect(() => {
     const inventoryId = currentWarehouse?.id || 'main';
-    const unsubscribe = onSnapshot(doc(db, 'inventory', inventoryId), (snap) => {
-      if (!snap.exists()) {
-        setInventory({});
-        return;
-      }
-      // Read the new contents-map shape. Legacy fields (rice/dal/
-      // sachets) are also exposed under their commodity ids so the
-      // rest of the dashboard doesn't have to special-case them.
-      const data = snap.data();
-      const next = {};
-      for (const [k, v] of Object.entries(data)) {
-        if (k === 'rice' || k === 'dal' || k === 'sachets') {
-          // Map legacy keys to their commodity ids.
-          if (k === 'rice') next['commodity_rice'] = Number(v) || 0;
-          else if (k === 'dal') next['commodity_dal'] = Number(v) || 0;
-          else if (k === 'sachets') next['commodity_sachets'] = Number(v) || 0;
-        } else if (k === 'updatedAt' || k === 'createdAt') {
-          // Skip timestamps — they're not commodity counts.
-          continue;
-        } else {
-          next[k] = Number(v) || 0;
+    const unsubscribe = onSnapshot(
+      doc(db, 'inventory', inventoryId),
+      (snap) => {
+        if (!snap.exists()) {
+          setInventory({});
+          return;
         }
-      }
-      setInventory(next);
-    });
+        // Read the new contents-map shape. Legacy fields (rice/dal/
+        // sachets) are also exposed under their commodity ids so the
+        // rest of the dashboard doesn't have to special-case them.
+        const data = snap.data();
+        const next = {};
+        for (const [k, v] of Object.entries(data)) {
+          if (k === 'rice' || k === 'dal' || k === 'sachets') {
+            // Map legacy keys to their commodity ids.
+            if (k === 'rice') next['commodity_rice'] = Number(v) || 0;
+            else if (k === 'dal') next['commodity_dal'] = Number(v) || 0;
+            else if (k === 'sachets') next['commodity_sachets'] = Number(v) || 0;
+          } else if (k === 'updatedAt' || k === 'createdAt') {
+            // Skip timestamps — they're not commodity counts.
+            continue;
+          } else {
+            next[k] = Number(v) || 0;
+          }
+        }
+        setInventory(next);
+      },
+      (err) => firestoreOnError('Dashboard/inventory', err)
+    );
     return () => unsubscribe();
   }, [currentWarehouse]);
 
@@ -81,9 +87,13 @@ export default function Dashboard({ navigation }) {
     if (currentWarehouse?.id) {
       boxesRef = query(boxesRef, where('warehouseId', '==', currentWarehouse.id));
     }
-    const unsubscribe = onSnapshot(boxesRef, (snapshot) => {
-      setBoxes(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
-    });
+    const unsubscribe = onSnapshot(
+      boxesRef,
+      (snapshot) => {
+        setBoxes(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
+      },
+      (err) => firestoreOnError('Dashboard/boxes', err)
+    );
     return () => unsubscribe();
   }, [currentWarehouse]);
 
@@ -169,9 +179,9 @@ export default function Dashboard({ navigation }) {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     try {
       await signOut(auth);
-      snackbar.info('Signed out');
+      snackbar.info(tCommon.signedOut);
     } catch (_e) {
-      snackbar.error('Could not sign out');
+      snackbar.error(tCommon.signOutFailed);
     }
   };
 
@@ -357,7 +367,7 @@ export default function Dashboard({ navigation }) {
               <Text style={[styles.sectionTitle, { color: theme.text }]}>{t.liveInventory}</Text>
               {chartData.length === 0 ? (
                 <Text style={[styles.empty, { color: theme.muted }]}>
-                  No commodities configured for this template.
+                  {t.emptyChart}
                 </Text>
               ) : (
                 <View style={styles.metricGrid}>

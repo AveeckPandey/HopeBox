@@ -3,6 +3,7 @@ import { doc, getDoc, setDoc, onSnapshot } from "firebase/firestore";
 import { db, auth } from "../services/firebase";
 import { logger } from "../services/logger";
 import { onAuthStateChanged } from "firebase/auth";
+import { firestoreOnError } from "../hooks/useFirestoreSubscription";
 
 const UserContext = createContext({
   userRole: null,
@@ -79,15 +80,19 @@ export function UserProvider({ children }) {
 
       setLoading(false);
 
-      unsubscribeDoc = onSnapshot(userRef, (snap) => {
-        if (snap.exists()) {
-          setUserData((prev) => {
-            const newData = { id: firebaseUser.uid, ...snap.data() };
-            if (JSON.stringify(prev) === JSON.stringify(newData)) return prev;
-            return newData;
-          });
-        }
-      });
+      unsubscribeDoc = onSnapshot(
+        userRef,
+        (snap) => {
+          if (snap.exists()) {
+            setUserData((prev) => {
+              const newData = { id: firebaseUser.uid, ...snap.data() };
+              if (JSON.stringify(prev) === JSON.stringify(newData)) return prev;
+              return newData;
+            });
+          }
+        },
+        (err) => firestoreOnError('UserContext/doc', err)
+      );
     });
 
     return () => {

@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { Animated, useColorScheme } from 'react-native';
 import { NavigationContainer, DarkTheme, DefaultTheme } from '@react-navigation/native';
-import { useColorScheme } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { StatusBar } from 'expo-status-bar';
@@ -19,6 +19,30 @@ import SnackbarHost from './src/components/SnackbarHost';
 import SplashScreen from './src/components/SplashScreen';
 import PermissionBanner from './src/components/PermissionBanner';
 import OfflineBanner from './src/components/OfflineBanner';
+
+// P42: initialise Sentry BEFORE any other module touches it. We
+// guard on the DSN so the app still works locally without a
+// configured error reporting backend — Sentry stays inert, the
+// `if` body never runs, and every `require('@sentry/react-native')`
+// in the rest of the app returns a no-op stub.
+// `enableInExpoDevelopment: false` keeps dev logs from spamming
+// the dev's Sentry project; `tracesSampleRate: 0.1` caps perf
+// traces at 10% of sessions to keep the org's quota healthy.
+if (process.env.EXPO_PUBLIC_SENTRY_DSN) {
+  try {
+    const Sentry = require('@sentry/react-native');
+    Sentry.init({
+      dsn: process.env.EXPO_PUBLIC_SENTRY_DSN,
+      enableInExpoDevelopment: false,
+      tracesSampleRate: 0.1,
+    });
+  } catch (err) {
+    // Sentry init failed (e.g. native module not yet linked). Don't
+    // block app startup — logger will still capture locally.
+    // eslint-disable-next-line no-console
+    console.warn('[App] Sentry init skipped:', err?.message || err);
+  }
+}
 
 const THEME_KEY = 'inventory-app-theme';
 
@@ -84,15 +108,53 @@ export default function App() {
 // risk of the two falling out of sync. `UserContext` already derives
 // `userData` from the auth listener; we use its presence to choose
 // between the auth and main navigators.
+//
+// P47: instead of swapping `<SplashScreen />` for the navigator in
+// one render, we hold the splash in a sibling `Animated.View` and
+// fade it out across 220ms before mounting the navigator. Without
+// the fade, the swap is binary and a fast launcher (Android Go, low
+// RAM) shows a single-frame white flash. The phase-state pattern
+// (`'splash' | 'app'`) means the navigator doesn't render until the
+// fade has started, so the user never sees the navigator behind a
+// half-faded splash.
 function NavigationRoot({ navigationTheme, themeName }) {
   const { userData, loading } = useUser();
   return (
     <NavigationContainer theme={navigationTheme}>
       <StatusBar style={themeName === 'dark' ? 'light' : 'dark'} />
-      {loading ? <SplashScreen /> : userData ? <AppNavigator /> : <AuthNavigator />}
+      {loading || !userData ? <BootSplash ready={!loading} /> : <AppNavigator />}
       <OfflineBanner />
       <PermissionBanner />
       <SnackbarHost />
     </NavigationContainer>
+  );
+}
+
+// P47: wrapper that holds the splash in an Animated.View and only
+// swaps to the navigator once the fade has begun. The `ready` prop
+// flips true when `UserContext.loading` resolves.
+function BootSplash({ ready }) {
+  const opacity = useRef(new Animated.Value(1)).current;
+  const [phase, setPhase] = useState('splash');
+
+  useEffect(() => {
+    if (!ready) return;
+    if (phase !== 'splash') return;
+    Animated.timing(opacity, {
+      toValue: 0,
+      duration: 220,
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished) setPhase('app');
+    });
+  }, [ready, phase, opacity]);
+
+  if (phase === 'app') {
+    return <AuthNavigator />;
+  }
+  return (
+    <Animated.View style={{ flex: 1, opacity }} pointerEvents={ready ? 'none' : 'auto'}>
+      <SplashScreen />
+    </Animated.View>
   );
 }

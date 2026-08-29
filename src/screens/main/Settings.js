@@ -44,7 +44,7 @@ export default function Settings({ navigation }) {
   const handleSignOut = () => {
     Alert.alert(
       t.signOut,
-      'Sign out of your account?',
+      tCommon.signOutConfirm,
       [
         { text: tCommon.cancel, style: 'cancel' },
         {
@@ -53,9 +53,9 @@ export default function Settings({ navigation }) {
           onPress: async () => {
             try {
               await signOut(auth);
-              snackbar.info('Signed out');
+              snackbar.info(tCommon.signedOut);
             } catch (_e) {
-              snackbar.error('Could not sign out');
+              snackbar.error(tCommon.signOutFailed);
             }
           },
         },

@@ -14,6 +14,7 @@ import { useLanguage } from '../../contexts/LanguageContext';
 import { logAction } from '../../services/audit';
 import { logger } from '../../services/logger';
 import { snackbar } from '../../hooks/useSnackbar';
+import { firestoreOnError } from '../../hooks/useFirestoreSubscription';
 import {
   applyBoxToInventory,
   findNegativeQuantities,
@@ -100,9 +101,7 @@ export default function BoxDetails({ route, navigation }) {
       (snapshot) => {
         setScanHistory(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
       },
-      (err) => {
-        logger.logWarning('BoxDetails/scanHistory', err.message, { boxId });
-      }
+      (err) => firestoreOnError('BoxDetails/scanHistory', err)
     );
     return unsubscribe;
   }, [routeItem?.id]);

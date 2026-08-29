@@ -15,6 +15,7 @@ import { lineQty } from '../../services/boxLines';
 import { logAction } from '../../services/audit';
 import { logger } from '../../services/logger';
 import { snackbar } from '../../hooks/useSnackbar';
+import { firestoreOnError } from '../../hooks/useFirestoreSubscription';
 import QrThumb from '../../components/QrThumb';
 
 import ScreenHeader from '../../components/ScreenHeader';
@@ -66,9 +67,13 @@ export default function Boxes({ navigation }) {
     if (currentWarehouse?.id) {
       boxesRef = query(boxesRef, where('warehouseId', '==', currentWarehouse.id));
     }
-    const unsubscribe = onSnapshot(boxesRef, (snapshot) => {
-      setBoxes(snapshot.docs.map((boxDoc) => ({ id: boxDoc.id, ...boxDoc.data() })));
-    });
+    const unsubscribe = onSnapshot(
+      boxesRef,
+      (snapshot) => {
+        setBoxes(snapshot.docs.map((boxDoc) => ({ id: boxDoc.id, ...boxDoc.data() })));
+      },
+      (err) => firestoreOnError('Boxes', err)
+    );
     return () => unsubscribe();
   }, [currentWarehouse]);
 

@@ -52,6 +52,12 @@ export const logger = {
    * has decided what to do (e.g. shown a snackbar). For
    * uncaught errors that need a hard crash, use
    * `ErrorBoundary.componentDidCatch` directly.
+   *
+   * P42: when Sentry is installed AND initialised (DSN provided),
+   * also forward to Sentry.captureException. We use a dynamic
+   * `require` so the logger keeps working in environments where
+   * `@sentry/react-native` is not loaded (tests, web preview, etc.)
+   * without each test having to mock the module.
    */
   logError(context, err, extra) {
     try {
@@ -60,6 +66,22 @@ export const logger = {
       // Keep this on one line in dev so React Native's log viewer
       // doesn't truncate the stack.
       console.warn(`[${context}]`, payload.err?.message || String(payload.err), payload);
+
+      // Sentry forward — guarded so a missing package or broken
+      // native module never throws. `Sentry` is null when:
+      //   - the package isn't installed (CI, web, fresh clone)
+      //   - Sentry.init was never called (DSN blank)
+      try {
+        const Sentry = require('@sentry/react-native');
+        if (Sentry && typeof Sentry.captureException === 'function') {
+          Sentry.captureException(err instanceof Error ? err : new Error(String(err)), {
+            tags: { context },
+            extra: payload.extra,
+          });
+        }
+      } catch {
+        // Sentry unavailable — already logged to console above.
+      }
     } catch {
       // Last-resort: don't throw from a logger.
     }

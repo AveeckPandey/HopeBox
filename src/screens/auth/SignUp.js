@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import {
   Keyboard,
   KeyboardAvoidingView,
@@ -124,7 +124,7 @@ export default function SignUp({ navigation }) {
     </View>
   );
 
-  const styles = createStyles(theme);
+  const styles = useMemo(() => createStyles(theme), [theme]);
 
   return (
     <KeyboardAvoidingView

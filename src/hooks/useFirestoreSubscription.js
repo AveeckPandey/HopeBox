@@ -23,6 +23,11 @@ import { reportPermissionError } from './reportPermissionError';
 //   `subscribeFirestore(query, onData, onError?)` — low-level
 //     helper for callers that already have their own state plumbing
 //     (e.g. the services in `src/services/`).
+//   `firestoreOnError(context, err)` — drop-in error callback for
+//     raw `onSnapshot(query, onData, onError)` call sites. Routes
+//     permission-denied errors to the global PermissionBanner and
+//     other failures to the logger. This is what every screen in the
+//     app should pass as the third argument to `onSnapshot`.
 const PERMISSION_DENIED = 'permission-denied';
 
 function isPermissionDenied(err) {
@@ -33,6 +38,24 @@ function isPermissionDenied(err) {
   if (err.code === PERMISSION_DENIED) return true;
   const msg = String(err.message || '').toLowerCase();
   return msg.includes('permission') && msg.includes('denied');
+}
+
+/**
+ * One-stop error callback for raw `onSnapshot` call sites.
+ * Mirrors the routing that `subscribeFirestore` does internally,
+ * so screens that use `useEffect` + `onSnapshot` directly don't
+ * have to reinvent the permission-error vs. generic-error split.
+ *
+ * @param {string} context  Short tag for the logger, e.g. 'Boxes'.
+ * @param {Error}  err      The error from `onSnapshot`'s third arg.
+ */
+export function firestoreOnError(context, err) {
+  if (!err) return;
+  if (isPermissionDenied(err)) {
+    reportPermissionError({ source: context, message: err.message, code: err.code });
+  } else {
+    logger.logWarning(context, err.message || String(err), { code: err.code });
+  }
 }
 
 /**

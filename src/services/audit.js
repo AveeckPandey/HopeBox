@@ -1,6 +1,7 @@
 import { collection, addDoc, Timestamp, query, orderBy, onSnapshot, limit } from "firebase/firestore";
 import { auth, db } from "./firebase";
 import { logger } from "./logger";
+import { firestoreOnError } from "../hooks/useFirestoreSubscription";
 
 // Resolve the caller's userId. Order of preference:
 //   1. The userId argument the caller passed (used by the audit-log
@@ -42,11 +43,15 @@ export const subscribeToAuditLogs = (callback, maxLogs = 50) => {
     orderBy("timestamp", "desc"),
     limit(maxLogs)
   );
-  return onSnapshot(q, (snapshot) => {
-    const logs = snapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data()
-    }));
-    callback(logs);
-  });
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const logs = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      callback(logs);
+    },
+    (err) => firestoreOnError("services/audit/subscribe", err)
+  );
 };

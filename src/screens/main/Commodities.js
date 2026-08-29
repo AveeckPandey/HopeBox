@@ -68,7 +68,7 @@ function CommodityEditor({ visible, initial, onClose, onSave, theme, styles, t }
   const handleSave = async () => {
     if (busy) return;
     if (!name.trim()) {
-      snackbar.error('Name is required');
+      snackbar.error(t.nameRequired);
       return;
     }
     setBusy(true);
@@ -89,7 +89,7 @@ function CommodityEditor({ visible, initial, onClose, onSave, theme, styles, t }
       onClose();
     } catch (err) {
       logger.logError('Commodities/save', err, { commodityId: initial?.id });
-      snackbar.error('Could not save');
+      snackbar.error(t.saveFailed);
     } finally {
       setBusy(false);
     }
@@ -104,7 +104,7 @@ function CommodityEditor({ visible, initial, onClose, onSave, theme, styles, t }
             keyboardShouldPersistTaps="handled"
           >
             <Text style={[styles.modalTitle, { color: theme.text }]}>
-              {initial?.id ? 'Edit commodity' : 'New commodity'}
+              {initial?.id ? t.editItemLiteral : t.newItem}
             </Text>
             <ThemedTextInput label="Name" value={name} onChangeText={setName} />
             <ThemedTextInput
@@ -271,6 +271,7 @@ export default function Commodities({ navigation }) {
   const { userData } = useUser();
   const { t: tAll, tf } = useLanguage();
   const t = tAll('commodities');
+  const tCommon = tAll('common');
   const styles = useMemo(() => createStyles(theme), [theme]);
 
   const [editorOpen, setEditorOpen] = useState(false);
@@ -294,21 +295,21 @@ export default function Commodities({ navigation }) {
       const newId = await saveCommodity(payload);
       await logAction('commodity_created', { commodityId: newId }, userData?.id);
     }
-    snackbar.success('Commodity saved');
+    snackbar.success(t.success);
   };
 
   const handleDelete = (commodity) => {
     if (commodity.required) {
-      Alert.alert('Cannot delete', 'This commodity is required and cannot be removed.');
+      Alert.alert(t.cannotDeleteTitle, t.cannotDeleteMessage);
       return;
     }
     Alert.alert(
-      'Delete commodity?',
+      t.deleteConfirmTitle,
       `"${commodity.name}" will be hidden from new boxes. Existing boxes keep their data.`,
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: tCommon.cancel, style: 'cancel' },
         {
-          text: 'Delete',
+          text: tCommon.delete,
           style: 'destructive',
           onPress: async () => {
             // FR-COMM-4: confirm it's not referenced by any box.
@@ -322,10 +323,10 @@ export default function Commodities({ navigation }) {
               }
               await deleteCommodity(commodity.id);
               await logAction('commodity_deleted', { commodityId: commodity.id }, userData?.id);
-              snackbar.success('Commodity removed');
+              snackbar.success(t.removed);
             } catch (err) {
               logger.logError('Commodities/delete', err, { commodityId: commodity.id });
-              snackbar.error('Could not delete');
+              snackbar.error(t.deleteFailed);
             }
           },
         },

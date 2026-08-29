@@ -7,6 +7,7 @@ import { db } from '../../services/firebase';
 import { useAppTheme } from '../../theme/AppThemeContext';
 import { useUser } from '../../contexts/UserContext';
 import { useLanguage } from '../../contexts/LanguageContext';
+import { firestoreOnError } from '../../hooks/useFirestoreSubscription';
 
 import ScreenHeader from '../../components/ScreenHeader';
 import SurfaceCard from '../../components/SurfaceCard';
@@ -62,22 +63,30 @@ export default function AuditLog({ navigation }) {
   useEffect(() => {
     if (!isAdmin) return;
     const q = query(collection(db, 'auditLogs'), orderBy('timestamp', 'desc'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      setLogs(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
-    });
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        setLogs(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
+      },
+      (err) => firestoreOnError('AuditLog/logs', err)
+    );
     return () => unsubscribe();
   }, [isAdmin]);
 
   useEffect(() => {
     if (!isAdmin) return;
-    const unsubscribe = onSnapshot(collection(db, 'users'), (snapshot) => {
-      const next = {};
-      snapshot.docs.forEach((d) => {
-        const data = d.data();
-        next[d.id] = { name: data.name, email: data.email };
-      });
-      setUsersById(next);
-    });
+    const unsubscribe = onSnapshot(
+      collection(db, 'users'),
+      (snapshot) => {
+        const next = {};
+        snapshot.docs.forEach((d) => {
+          const data = d.data();
+          next[d.id] = { name: data.name, email: data.email };
+        });
+        setUsersById(next);
+      },
+      (err) => firestoreOnError('AuditLog/users', err)
+    );
     return () => unsubscribe();
   }, [isAdmin]);
 

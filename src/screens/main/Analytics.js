@@ -8,6 +8,7 @@ import { useAppTheme } from '../../theme/AppThemeContext';
 import { useCommodities } from '../../contexts/CommoditiesContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { flattenContents } from '../../services/inventoryMath';
+import { firestoreOnError } from '../../hooks/useFirestoreSubscription';
 
 import ScreenHeader from '../../components/ScreenHeader';
 import SurfaceCard from '../../components/SurfaceCard';
@@ -36,20 +37,26 @@ export default function Analytics() {
   // firestore.indexes.json (added in the data-model slice).
   const MAX_ANALYTICS_DOCS = 500;
   useEffect(() => {
-    const unsub1 = onSnapshot(collection(db, 'boxes'), (snap) => {
-      setBoxes(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-    });
+    const unsub1 = onSnapshot(
+      collection(db, 'boxes'),
+      (snap) => {
+        setBoxes(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      },
+      (err) => firestoreOnError('Analytics/boxes', err)
+    );
     const unsub2 = onSnapshot(
       query(collection(db, 'scanHistory'), orderBy('timestamp', 'desc'), limit(MAX_ANALYTICS_DOCS)),
       (snap) => {
         setScanHistory(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-      }
+      },
+      (err) => firestoreOnError('Analytics/scanHistory', err)
     );
     const unsub3 = onSnapshot(
       query(collection(db, 'auditLogs'), orderBy('timestamp', 'desc'), limit(MAX_ANALYTICS_DOCS)),
       (snap) => {
         setAuditLogs(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-      }
+      },
+      (err) => firestoreOnError('Analytics/auditLogs', err)
     );
     return () => { unsub1(); unsub2(); unsub3(); };
   }, []);

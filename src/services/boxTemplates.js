@@ -11,6 +11,7 @@ import {
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { logger } from './logger';
+import { firestoreOnError } from '../hooks/useFirestoreSubscription';
 import { DEFAULT_COMMODITY_IDS } from './commodities';
 
 // /config/boxTemplates/{templateId}
@@ -49,7 +50,10 @@ export function subscribeTemplates(callback) {
       callback(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
     },
     (err) => {
-      logger.logWarning('boxTemplates/subscribe', err.message);
+      firestoreOnError('services/boxTemplates/subscribe', err);
+      // Stay forgiving on this path: AddBox/EditBox can render
+      // without a template list (the user can still create a box
+      // from a commodity-only view).
       callback([]);
     }
   );

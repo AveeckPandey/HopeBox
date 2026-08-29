@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { collection, onSnapshot, addDoc, Timestamp } from "firebase/firestore";
 import { db } from "../services/firebase";
+import { firestoreOnError } from "../hooks/useFirestoreSubscription";
 
 const WarehouseContext = createContext({
   warehouses: [],
@@ -23,15 +24,19 @@ export function WarehouseProvider({ children }) {
   }, [currentWarehouse]);
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, "warehouses"), (snapshot) => {
-      const data = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
-      setWarehouses(data);
-      // Promote the first warehouse only when none is selected. Reading
-      // the ref (not state) keeps the snapshot handler stable.
-      if (data.length > 0 && !currentRef.current) {
-        setCurrentWarehouse(data[0]);
-      }
-    });
+    const unsubscribe = onSnapshot(
+      collection(db, "warehouses"),
+      (snapshot) => {
+        const data = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+        setWarehouses(data);
+        // Promote the first warehouse only when none is selected. Reading
+        // the ref (not state) keeps the snapshot handler stable.
+        if (data.length > 0 && !currentRef.current) {
+          setCurrentWarehouse(data[0]);
+        }
+      },
+      (err) => firestoreOnError('WarehouseContext', err)
+    );
     return () => unsubscribe();
   }, []);
 

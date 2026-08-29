@@ -29,8 +29,20 @@ export default class ErrorBoundary extends Component {
   }
 
   componentDidCatch(error, info) {
-    // Today we console-log; a future slice can wire this to Sentry
-    // or Crashlytics without changing any call sites.
+    // P42: report uncaught errors to Sentry directly (not via
+    // logger) so the boundary still reports when the logger
+    // itself is in a broken state. Dynamic require keeps the
+    // module optional in test/CI/web environments.
+    try {
+      const Sentry = require('@sentry/react-native');
+      if (Sentry && typeof Sentry.captureException === 'function') {
+        Sentry.captureException(error, { extra: { componentStack: info?.componentStack } });
+      }
+    } catch {
+      // Sentry unavailable — fall through to local logger.
+    }
+    // Always log locally too — useful in dev, and the only
+    // signal in environments where Sentry isn't installed.
     logger.logError('ErrorBoundary', error, { componentStack: info?.componentStack });
   }
 
