@@ -11,7 +11,7 @@ module.exports = {
     '^.+\\.[jt]sx?$': ['babel-jest', { configFile: './jest.babel.config.js' }],
   },
   transformIgnorePatterns: [
-    'node_modules/(?!(?:.pnpm/)?(react-native|@react-native|@react-navigation|expo|@expo/.*|@expo-google-fonts/.*|react-clone-referenced-element|@sentry/.*|sentry-expo|native-base|react-native-svg|expo-constants|expo-modules-core|expo-file-system|expo-linking|expo-application|expo-asset))',
+    'node_modules/(?!(?:.pnpm/)?(react-native|@react-native|@react-navigation|expo|@expo/.*|@expo-google-fonts/.*|react-clone-referenced-element|@sentry/.*|native-base|react-native-svg|expo-constants|expo-modules-core|expo-file-system|expo-linking|expo-application|expo-asset))',
   ],
   moduleFileExtensions: ['js', 'ts', 'json'],
 };

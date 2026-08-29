@@ -1,8 +1,7 @@
 // Ambient declarations for the Jest test surface used by the
 // unit tests in this folder. We don't depend on @types/jest
-// (the project's package.json pins sentry-expo@~57.0.0 which
-// isn't on the registry, so we can't install it cleanly), so
-// this file provides the minimum surface we actually use:
+// (the project doesn't include it as a devDependency), so this
+// file provides the minimum surface we actually use:
 // describe / it / beforeEach / afterEach / expect / jest.Mock
 // / jest.SpyInstance / jest.fn / jest.spyOn / jest.resetModules
 // / jest.mock. Tests reference it via a triple-slash directive.

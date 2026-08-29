@@ -47,14 +47,7 @@
       ],
       "expo-font",
       "expo-sharing",
-      "expo-status-bar",
-      [
-        "sentry-expo",
-        {
-          "organization": "HOPEBOX_ORG",
-          "project": "hopebox"
-        }
-      ]
+      "expo-status-bar"
     ],
     "experiments": {
       "reactCompiler": false
