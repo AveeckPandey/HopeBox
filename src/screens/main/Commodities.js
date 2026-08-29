@@ -26,7 +26,7 @@ const UNITS = ['kg', 'g', 'L', 'ml', 'pack', 'tablet', 'vial', 'unit', 'box'];
 
 // Composable commodity editor modal. We share one between create and
 // edit so the field set stays in lock-step.
-function CommodityEditor({ visible, initial, onClose, onSave, theme, styles, t }) {
+function CommodityEditor({ visible, initial, onClose, onSave, theme, styles, t, tCommon }) {
   const [name, setName] = useState(initial?.name || '');
   const [unit, setUnit] = useState(initial?.unit || 'kg');
   const [icon, setIcon] = useState(initial?.icon || 'package-variant');
@@ -106,33 +106,33 @@ function CommodityEditor({ visible, initial, onClose, onSave, theme, styles, t }
             <Text style={[styles.modalTitle, { color: theme.text }]}>
               {initial?.id ? t.editItemLiteral : t.newItem}
             </Text>
-            <ThemedTextInput label="Name" value={name} onChangeText={setName} />
+            <ThemedTextInput label={t.fieldName} value={name} onChangeText={setName} />
             <ThemedTextInput
-              label="Icon (MaterialCommunityIcons name)"
+              label={t.fieldIcon}
               value={icon}
               onChangeText={setIcon}
               autoCapitalize="none"
               error={icon.trim() !== '' && safeIcon(icon.trim()) === FALLBACK_ICON}
               helperText={
                 icon.trim() !== '' && safeIcon(icon.trim()) === FALLBACK_ICON
-                  ? "Unknown icon — will fall back to the default"
+                  ? t.unknownIconWarning
                   : undefined
               }
             />
             <ThemedTextInput
-              label="Color (hex)"
+              label={t.fieldColor}
               value={color}
               onChangeText={setColor}
               autoCapitalize="none"
             />
             <ThemedTextInput
-              label="Default per box"
+              label={t.fieldDefaultPerBox}
               value={defaultPerBox}
               onChangeText={(v) => setDefaultPerBox(v.replace(/[^0-9.]/g, ''))}
               keyboardType="numeric"
             />
             <ThemedTextInput
-              label="Sort order"
+              label={t.fieldSortOrder}
               value={sortOrder}
               onChangeText={(v) => setSortOrder(v.replace(/[^0-9]/g, ''))}
               keyboardType="numeric"
@@ -140,7 +140,7 @@ function CommodityEditor({ visible, initial, onClose, onSave, theme, styles, t }
             <ChipPicker
               theme={theme}
               styles={styles}
-              label="Category"
+              label={t.fieldCategory}
               value={category}
               options={CATEGORIES}
               onChange={setCategory}
@@ -148,26 +148,26 @@ function CommodityEditor({ visible, initial, onClose, onSave, theme, styles, t }
             <ChipPicker
               theme={theme}
               styles={styles}
-              label="Unit"
+              label={t.fieldUnit}
               value={unit}
               options={UNITS}
               onChange={setUnit}
             />
             <ToggleRow
               theme={theme}
-              label="Required"
+              label={t.fieldRequired}
               value={required}
               onValueChange={setRequired}
             />
             <ToggleRow
               theme={theme}
-              label="Track batch number"
+              label={t.fieldBatchTracking}
               value={batchTracking}
               onValueChange={setBatchTracking}
             />
             <ToggleRow
               theme={theme}
-              label="Track expiry date"
+              label={t.fieldExpiryTracking}
               value={expiryTracking}
               onValueChange={setExpiryTracking}
             />
@@ -176,7 +176,7 @@ function CommodityEditor({ visible, initial, onClose, onSave, theme, styles, t }
                 onPress={onClose}
                 style={({ pressed }) => [styles.modalBtn, { borderColor: theme.border, opacity: pressed ? 0.7 : 1 }]}
               >
-                <Text style={[styles.modalBtnText, { color: theme.text }]}>Cancel</Text>
+                <Text style={[styles.modalBtnText, { color: theme.text }]}>{tCommon.cancel}</Text>
               </Pressable>
               <Pressable
                 onPress={handleSave}
@@ -187,7 +187,7 @@ function CommodityEditor({ visible, initial, onClose, onSave, theme, styles, t }
                   { backgroundColor: theme.primary, opacity: busy ? 0.6 : pressed ? 0.85 : 1 },
                 ]}
               >
-                <Text style={[styles.modalBtnText, { color: theme.primaryText }]}>Save</Text>
+                <Text style={[styles.modalBtnText, { color: theme.primaryText }]}>{tCommon.save}</Text>
               </Pressable>
             </View>
           </ScrollView>
@@ -305,7 +305,7 @@ export default function Commodities({ navigation }) {
     }
     Alert.alert(
       t.deleteConfirmTitle,
-      `"${commodity.name}" will be hidden from new boxes. Existing boxes keep their data.`,
+      tf('commodities.deleteConfirmMessage', { name: commodity.name }),
       [
         { text: tCommon.cancel, style: 'cancel' },
         {
@@ -318,7 +318,7 @@ export default function Commodities({ navigation }) {
               const ref = query(collection(db, 'boxes'), where(`contents.${commodity.id}`, '>', 0));
               const snap = await getDocs(ref);
               if (snap.size > 0) {
-                snackbar.error(`In use by ${snap.size} box(es). Cannot delete.`);
+                snackbar.error(tf('commodities.inUseMessage', { count: snap.size }));
                 return;
               }
               await deleteCommodity(commodity.id);
@@ -340,9 +340,9 @@ export default function Commodities({ navigation }) {
         <AmbientGlow variant="topLeft" opacity={0.5} />
         <EmptyState
           icon="package-variant-closed"
-          title="No commodities"
-          message="Add a commodity to start defining box contents."
-          actionLabel="Add commodity"
+          title={t.emptyTitle}
+          message={t.emptyMessage}
+          actionLabel={t.addCommodity}
           onAction={openCreate}
         />
         <CommodityEditor
@@ -353,6 +353,7 @@ export default function Commodities({ navigation }) {
           theme={theme}
           styles={styles}
           t={t}
+          tCommon={tCommon}
         />
       </View>
     );
@@ -365,9 +366,9 @@ export default function Commodities({ navigation }) {
         <View style={styles.contentWrap}>
           <FadeInUp delay={0}>
             <ScreenHeader
-              eyebrow="CATALOG"
-              title="Commodities"
-              subtitle="The catalog of items that can go into a box. Shared across all warehouses."
+              eyebrow={t.eyebrow}
+              title={t.title}
+              subtitle={t.subtitle}
             />
           </FadeInUp>
 
@@ -381,7 +382,7 @@ export default function Commodities({ navigation }) {
               ]}
             >
               <MaterialCommunityIcons name="plus" size={18} color={theme.primaryText} />
-              <Text style={[styles.newBtnText, { color: theme.primaryText }]}>New commodity</Text>
+              <Text style={[styles.newBtnText, { color: theme.primaryText }]}>{t.newCommodity}</Text>
             </Pressable>
           </FadeInUp>
 
@@ -401,9 +402,9 @@ export default function Commodities({ navigation }) {
                     {c.required ? <Text style={{ color: theme.danger }}> *</Text> : null}
                   </Text>
                   <Text style={[styles.rowMeta, { color: theme.muted }]}>
-                    {c.category} · {c.unit} · default {c.defaultPerBox} {c.unit}
-                    {c.expiryTracking ? ' · expiry' : ''}
-                    {c.batchTracking ? ' · batch' : ''}
+                    {c.category} · {c.unit} · {t.metadata.defaultPrefix} {c.defaultPerBox} {c.unit}
+                    {c.expiryTracking ? ` · ${t.metadata.trackingExpiry}` : ''}
+                    {c.batchTracking ? ` · ${t.metadata.trackingBatch}` : ''}
                   </Text>
                 </View>
                 <Pressable
@@ -434,6 +435,7 @@ export default function Commodities({ navigation }) {
         theme={theme}
         styles={styles}
         t={t}
+        tCommon={tCommon}
       />
     </View>
   );

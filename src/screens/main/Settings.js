@@ -76,7 +76,10 @@ export default function Settings({ navigation }) {
             label={t.themeLabel}
             value={themeName === 'dark' ? t.themeDark : t.themeLight}
             onPress={toggleTheme}
-            accessibilityLabel={`${t.themeLabel}: ${themeName === 'dark' ? t.themeDark : t.themeLight}. Tap to switch.`}
+            accessibilityLabel={tf('settings.themeAccessibility', {
+              label: t.themeLabel,
+              value: themeName === 'dark' ? t.themeDark : t.themeLight,
+            })}
           />
           <View style={styles.field}>
             <Text style={styles.fieldLabel}>{t.language}</Text>
@@ -98,7 +101,7 @@ export default function Settings({ navigation }) {
             theme={theme}
             icon="account-circle-outline"
             label={t.signedInAs}
-            value={userData?.name || userData?.email || '—'}
+            value={userData?.name || userData?.email || t.emptyValue}
           />
           <SettingRow
             theme={theme}

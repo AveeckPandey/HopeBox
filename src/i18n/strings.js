@@ -201,6 +201,41 @@ export const strings = {
     removed: 'Commodity removed',
     deleteItem: 'Delete {{name}}',
     validationFailed: 'Some lines need attention',
+    // P27: remaining literal English sweep. The screen has many
+    // form labels, a delete-confirm message, and a "in use" snackbar
+    // — all of which now route through the catalog. Hindi falls
+    // back to English via the deep-merge in `strings.hi.js` for
+    // any key that isn't translated yet.
+    eyebrow: 'CATALOG',
+    title: 'Commodities',
+    subtitle: 'The catalog of items that can go into a box. Shared across all warehouses.',
+    addCommodity: 'Add commodity',
+    newCommodity: 'New commodity',
+    emptyTitle: 'No commodities',
+    emptyMessage: 'Add a commodity to start defining box contents.',
+    fieldName: 'Name',
+    fieldIcon: 'Icon (MaterialCommunityIcons name)',
+    fieldColor: 'Color (hex)',
+    fieldDefaultPerBox: 'Default per box',
+    fieldSortOrder: 'Sort order',
+    fieldCategory: 'Category',
+    fieldUnit: 'Unit',
+    fieldRequired: 'Required',
+    fieldBatchTracking: 'Track batch number',
+    fieldExpiryTracking: 'Track expiry date',
+    unknownIconWarning: 'Unknown icon — will fall back to the default',
+    deleteConfirmMessage: '"{{name}}" will be hidden from new boxes. Existing boxes keep their data.',
+    inUseMessage: 'In use by {{count}} box(es). Cannot delete.',
+    plural: {
+      box: 'box',
+      boxes: 'boxes',
+    },
+    metadata: {
+      category: 'category',
+      defaultPrefix: 'default',
+      trackingExpiry: 'expiry',
+      trackingBatch: 'batch',
+    },
   },
 
   templates: {
@@ -346,6 +381,13 @@ export const strings = {
     commodities: 'Commodities',
     templates: 'Box templates',
     signOut: 'Sign Out',
+    // P27: a few strings the screen still assembled inline (e.g.
+    // the dynamic theme accessibility label and the dash
+    // placeholder for the signed-in-as row). The '—' becomes a
+    // distinct key so a Hindi translation could replace it
+    // later (today: same character).
+    themeAccessibility: '{{label}}: {{value}}. Tap to switch.',
+    emptyValue: '—',
   },
 
   status: {
