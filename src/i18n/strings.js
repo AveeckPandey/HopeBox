@@ -112,6 +112,8 @@ export const strings = {
     noMatchesMessage: 'Try a different search or filter.',
     countOne: '1 box',
     countMany: 'boxes',
+    viewQR: 'View QR',
+    qrHelper: 'Scan to open this box on another device',
     boxId: 'Box ID',
     stored: 'Stored',
     dispatched: 'Dispatched',
@@ -125,6 +127,7 @@ export const strings = {
     editBox: 'Edit box {{id}}',
     deleteBox: 'Delete box {{id}}',
     printBox: 'Print QR for box {{id}}',
+    viewQr: 'View QR for box {{id}}',
     delete: 'Delete',
     deleteConfirmTitle: 'Delete this box?',
     deleteConfirmMessage: 'The box record will be removed. Inventory is not affected.',
@@ -303,6 +306,12 @@ export const strings = {
     totalSachets: 'Total Sachets',
     totalScans: 'Total Scans',
     auditLogs: 'Audit Logs',
+    // P35: chip + button strings. "Showing N most recent" makes
+    // the cap visible to the user; "Load older" is the explicit
+    // pagination affordance.
+    showingMostRecent: 'Showing most recent',
+    loadOlder: 'Load older',
+    loading: 'Loading…',
   },
 
   auditLog: {

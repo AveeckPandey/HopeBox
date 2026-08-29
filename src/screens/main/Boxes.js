@@ -16,7 +16,6 @@ import { logAction } from '../../services/audit';
 import { logger } from '../../services/logger';
 import { snackbar } from '../../hooks/useSnackbar';
 import { firestoreOnError } from '../../hooks/useFirestoreSubscription';
-import QrThumb from '../../components/QrThumb';
 
 import ScreenHeader from '../../components/ScreenHeader';
 import SurfaceCard from '../../components/SurfaceCard';
@@ -25,6 +24,7 @@ import ChipGroup from '../../components/ChipGroup';
 import StatusBadge from '../../components/StatusBadge';
 import EmptyState from '../../components/EmptyState';
 import ThemedTextInput from '../../components/ThemedTextInput';
+import QrModal from '../../components/QrModal';
 import { layout, radius, spacing, type } from '../../theme/tokens';
 
 export default function Boxes({ navigation }) {
@@ -54,6 +54,10 @@ export default function Boxes({ navigation }) {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
+  // P34: the QR is shown in a single Modal at the screen level,
+  // not on every card. `qrModalBox` is the box whose QR is
+  // currently displayed; null when the modal is closed.
+  const [qrModalBox, setQrModalBox] = useState(null);
   // P26: pull-to-refresh state. The Firestore listener is
   // already live, so "refreshing" is a UX hint only — we set it
   // true, briefly wait, then false. Re-querying is unnecessary
@@ -165,6 +169,14 @@ export default function Boxes({ navigation }) {
   const handlePrint = useCallback((item) => navigation.navigate('PrintQR', { item }), [navigation]);
   const handleOpen = useCallback((item) => navigation.navigate('BoxDetails', { item }), [navigation]);
   const handleDelete = useCallback((item) => confirmDelete(item), [confirmDelete]);
+  // P34: open the QR modal for a single box. The modal is
+  // mounted at the screen level so the QR isn't rendered once
+  // per list item.
+  const handleShowQr = useCallback((item) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setQrModalBox(item);
+  }, []);
+  const handleCloseQr = useCallback(() => setQrModalBox(null), []);
 
   return (
     <View style={styles.screen}>
@@ -241,6 +253,7 @@ export default function Boxes({ navigation }) {
               onPrint={handlePrint}
               onOpen={handleOpen}
               onDelete={handleDelete}
+              onShowQr={handleShowQr}
               t={t}
               tf={tf}
               commodities={commodities}
@@ -277,11 +290,18 @@ export default function Boxes({ navigation }) {
           onPress={() => navigation.navigate('AddBox')}
         />
       ) : null}
+      <QrModal
+        visible={!!qrModalBox}
+        value={qrModalBox?.id || ''}
+        onClose={handleCloseQr}
+        label={qrModalBox?.id}
+        helperText={t.qrHelper}
+      />
     </View>
   );
 }
 
-function BoxCard({ item, theme, styles, canEdit, onEdit, onPrint, onOpen, onDelete, t, tf, commodities }) {
+function BoxCard({ item, theme, styles, canEdit, onEdit, onPrint, onOpen, onDelete, onShowQr, t, tf, commodities }) {
   return (
     <SurfaceCard>
       <Pressable
@@ -334,10 +354,6 @@ function BoxCard({ item, theme, styles, canEdit, onEdit, onPrint, onOpen, onDele
             <Text style={[styles.donorText, { color: theme.muted }]}>{t.donor}: {item.donorName}</Text>
           </View>
         ) : null}
-
-        <View style={[styles.qrCard, { backgroundColor: theme.surfaceRaised, borderColor: theme.border }]}>
-          <QrThumb value={item.id} size={84} backgroundColor={theme.surfaceRaised} />
-        </View>
       </Pressable>
 
       <View style={styles.actionsRow}>
@@ -360,6 +376,22 @@ function BoxCard({ item, theme, styles, canEdit, onEdit, onPrint, onOpen, onDele
           />
         ) : null}
         <View style={{ flex: 1 }} />
+        {/* P34: tap-to-expand QR. The QR is shown in a screen-
+            level modal, not on every card. The cost of the QR
+            render is paid exactly once, on demand. */}
+        <Pressable
+          onPress={onShowQr}
+          accessibilityRole="button"
+          accessibilityLabel={tf('boxes.viewQr', { id: item.id })}
+          style={({ pressed }) => [
+            styles.printBtn,
+            { borderColor: theme.primary },
+            pressed && { opacity: 0.85 },
+          ]}
+        >
+          <MaterialCommunityIcons name="qrcode" size={16} color={theme.primary} />
+          <Text style={[styles.printBtnText, { color: theme.primary }]}>{t.viewQR}</Text>
+        </Pressable>
         <Pressable
           onPress={onPrint}
           accessibilityRole="button"
@@ -431,13 +463,6 @@ function createStyles(theme) {
     tagText: { ...type.caption, fontSize: 11, fontWeight: '600' },
     donorRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: spacing.sm },
     donorText: { ...type.caption },
-    qrCard: {
-      alignItems: 'center',
-      marginTop: spacing.md,
-      borderRadius: radius.lg,
-      borderWidth: 1,
-      padding: spacing.md,
-    },
     actionsRow: {
       marginTop: spacing.md,
       flexDirection: 'row',

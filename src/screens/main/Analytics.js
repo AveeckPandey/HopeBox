@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { collection, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
+import { collection, getDocs, limit, onSnapshot, orderBy, query, startAfter } from 'firebase/firestore';
 
 import { db } from '../../services/firebase';
 import { useAppTheme } from '../../theme/AppThemeContext';
@@ -9,6 +10,7 @@ import { useCommodities } from '../../contexts/CommoditiesContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { flattenContents } from '../../services/inventoryMath';
 import { firestoreOnError } from '../../hooks/useFirestoreSubscription';
+import { logger } from '../../services/logger';
 
 import ScreenHeader from '../../components/ScreenHeader';
 import SurfaceCard from '../../components/SurfaceCard';
@@ -35,7 +37,26 @@ export default function Analytics() {
   // read cost on every snapshot fire. The orderBy + limit combo
   // requires a Firestore composite index — declared in
   // firestore.indexes.json (added in the data-model slice).
+  //
+  // P35 continued: the cursor ("the last doc we have") is the
+  // anchor for the "Load older" button below. Each click does
+  // a one-shot `getDocs` with `startAfter(cursor)`, fetches
+  // the next 500, and appends to the live array. The live
+  // subscription continues to update the first 500 in real
+  // time; the older rows are a static snapshot.
   const MAX_ANALYTICS_DOCS = 500;
+  // Cursors and load-more state for scanHistory + auditLogs.
+  // `null` cursor means "haven't loaded any older pages yet";
+  // `null` returned from a getDocs means "no more rows".
+  const [scanCursor, setScanCursor] = useState(null);
+  const [auditCursor, setAuditCursor] = useState(null);
+  const [scansExtra, setScansExtra] = useState([]);
+  const [auditExtra, setAuditExtra] = useState([]);
+  const [loadingOlderScans, setLoadingOlderScans] = useState(false);
+  const [loadingOlderAudit, setLoadingOlderAudit] = useState(false);
+  const [hasMoreScans, setHasMoreScans] = useState(true);
+  const [hasMoreAudit, setHasMoreAudit] = useState(true);
+
   useEffect(() => {
     const unsub1 = onSnapshot(
       collection(db, 'boxes'),
@@ -48,6 +69,17 @@ export default function Analytics() {
       query(collection(db, 'scanHistory'), orderBy('timestamp', 'desc'), limit(MAX_ANALYTICS_DOCS)),
       (snap) => {
         setScanHistory(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        // The cursor is the last (oldest) doc in the live
+        // window. "Load older" picks up from there.
+        if (snap.docs.length > 0) {
+          setScanCursor(snap.docs[snap.docs.length - 1]);
+        }
+        // If the live window returned fewer than the cap, the
+        // entire collection fits in one page; no point offering
+        // a "Load older" button.
+        if (snap.docs.length < MAX_ANALYTICS_DOCS) {
+          setHasMoreScans(false);
+        }
       },
       (err) => firestoreOnError('Analytics/scanHistory', err)
     );
@@ -55,11 +87,99 @@ export default function Analytics() {
       query(collection(db, 'auditLogs'), orderBy('timestamp', 'desc'), limit(MAX_ANALYTICS_DOCS)),
       (snap) => {
         setAuditLogs(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        if (snap.docs.length > 0) {
+          setAuditCursor(snap.docs[snap.docs.length - 1]);
+        }
+        if (snap.docs.length < MAX_ANALYTICS_DOCS) {
+          setHasMoreAudit(false);
+        }
       },
       (err) => firestoreOnError('Analytics/auditLogs', err)
     );
     return () => { unsub1(); unsub2(); unsub3(); };
   }, []);
+
+  // P35: one-shot pagination. The user explicitly asks for
+  // older history by tapping the button; the live subscription
+  // above keeps the first 500 up to date on its own.
+  const loadOlderScans = async () => {
+    if (!scanCursor || loadingOlderScans || !hasMoreScans) return;
+    setLoadingOlderScans(true);
+    try {
+      const next = await getDocs(
+        query(
+          collection(db, 'scanHistory'),
+          orderBy('timestamp', 'desc'),
+          startAfter(scanCursor),
+          limit(MAX_ANALYTICS_DOCS)
+        )
+      );
+      const rows = next.docs.map((d) => ({ id: d.id, ...d.data() }));
+      setScansExtra((prev) => [...prev, ...rows]);
+      if (next.docs.length > 0) {
+        setScanCursor(next.docs[next.docs.length - 1]);
+      } else {
+        setHasMoreScans(false);
+      }
+      if (next.docs.length < MAX_ANALYTICS_DOCS) {
+        setHasMoreScans(false);
+      }
+    } catch (err) {
+      logger.logError('Analytics/loadOlderScans', err);
+    } finally {
+      setLoadingOlderScans(false);
+    }
+  };
+
+  const loadOlderAudit = async () => {
+    if (!auditCursor || loadingOlderAudit || !hasMoreAudit) return;
+    setLoadingOlderAudit(true);
+    try {
+      const next = await getDocs(
+        query(
+          collection(db, 'auditLogs'),
+          orderBy('timestamp', 'desc'),
+          startAfter(auditCursor),
+          limit(MAX_ANALYTICS_DOCS)
+        )
+      );
+      const rows = next.docs.map((d) => ({ id: d.id, ...d.data() }));
+      setAuditExtra((prev) => [...prev, ...rows]);
+      if (next.docs.length > 0) {
+        setAuditCursor(next.docs[next.docs.length - 1]);
+      } else {
+        setHasMoreAudit(false);
+      }
+      if (next.docs.length < MAX_ANALYTICS_DOCS) {
+        setHasMoreAudit(false);
+      }
+    } catch (err) {
+      logger.logError('Analytics/loadOlderAudit', err);
+    } finally {
+      setLoadingOlderAudit(false);
+    }
+  };
+
+  // Combined view for the charts. Live rows + the older pages
+  // appended in order. Sorted by timestamp desc so the chart
+  // sees the same shape as the live window.
+  const allScans = useMemo(() => {
+    if (scansExtra.length === 0) return scanHistory;
+    const seen = new Set(scanHistory.map((s) => s.id));
+    return [
+      ...scanHistory,
+      ...scansExtra.filter((s) => !seen.has(s.id)),
+    ];
+  }, [scanHistory, scansExtra]);
+
+  const allAudit = useMemo(() => {
+    if (auditExtra.length === 0) return auditLogs;
+    const seen = new Set(auditLogs.map((a) => a.id));
+    return [
+      ...auditLogs,
+      ...auditExtra.filter((a) => !seen.has(a.id)),
+    ];
+  }, [auditLogs, auditExtra]);
 
   // P26: pull-to-refresh. The three onSnapshot listeners above
   // are already live, so this is a UX spinner only — the data
@@ -89,12 +209,12 @@ export default function Analytics() {
     });
 
     const scansByAction = {};
-    scanHistory.forEach((s) => {
+    allScans.forEach((s) => {
       scansByAction[s.action] = (scansByAction[s.action] || 0) + 1;
     });
 
     const scansByDay = {};
-    scanHistory.forEach((s) => {
+    allScans.forEach((s) => {
       const date = s.timestamp?.toDate?.()?.toLocaleDateString() || 'unknown';
       scansByDay[date] = (scansByDay[date] || 0) + 1;
     });
@@ -119,10 +239,16 @@ export default function Analytics() {
       scansByAction, scansByDay,
       commodityTotals,
       totalBoxes: boxes.length,
-      totalScans: scanHistory.length,
-      totalAuditLogs: auditLogs.length,
+      // P35: totals reflect the *loaded* set (live window plus
+      // any older pages the user has fetched). This number is
+      // the honest "how many records is Analytics actually
+      // looking at right now" — distinct from the count in
+      // Firestore, which the user can't see without a separate
+      // query.
+      totalScans: allScans.length,
+      totalAuditLogs: allAudit.length,
     };
-  }, [boxes, scanHistory, auditLogs, commodities]);
+  }, [boxes, allScans, allAudit, commodities]);
 
   const renderBar = (label, value, max, color) => (
     <View key={label} style={styles.barRow}>
@@ -213,7 +339,20 @@ export default function Analytics() {
 
           <FadeInUp delay={280}>
             <SurfaceCard>
-              <Text style={[styles.sectionTitle, { color: theme.text }]}>{t.scanActivity}</Text>
+              <View style={styles.sectionHeader}>
+                <Text style={[styles.sectionTitle, { color: theme.text }]}>{t.scanActivity}</Text>
+                {/* P35: tell the user when the chart is a slice.
+                    Live window is 500 rows; "Load older" pulls
+                    the next 500 when the user asks. */}
+                {scanHistory.length >= MAX_ANALYTICS_DOCS ? (
+                  <View style={[styles.capChip, { borderColor: theme.border, backgroundColor: theme.surfaceRaised }]}>
+                    <MaterialCommunityIcons name="information-outline" size={12} color={theme.muted} />
+                    <Text style={[styles.capChipText, { color: theme.muted }]}>
+                      {t.showingMostRecent} {MAX_ANALYTICS_DOCS}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
               <View style={styles.metricGrid}>
                 <MetricTile label={t.totalScans} value={stats.totalScans} tone="primary" />
                 <MetricTile label={t.auditLogs} value={stats.totalAuditLogs} tone="warning" />
@@ -221,6 +360,23 @@ export default function Analytics() {
               {Object.entries(stats.scansByAction).map(([action, count]) =>
                 renderBar(action, count, stats.totalScans, theme.primary)
               )}
+              {hasMoreScans ? (
+                <Pressable
+                  onPress={loadOlderScans}
+                  disabled={loadingOlderScans}
+                  accessibilityRole="button"
+                  accessibilityLabel={t.loadOlder}
+                  style={({ pressed }) => [
+                    styles.loadMoreBtn,
+                    { borderColor: theme.primary, opacity: loadingOlderScans ? 0.6 : pressed ? 0.85 : 1 },
+                  ]}
+                >
+                  <MaterialCommunityIcons name="history" size={16} color={theme.primary} />
+                  <Text style={[styles.loadMoreText, { color: theme.primary }]}>
+                    {loadingOlderScans ? t.loading : t.loadOlder}
+                  </Text>
+                </Pressable>
+              ) : null}
             </SurfaceCard>
           </FadeInUp>
 
@@ -253,6 +409,39 @@ function createStyles(theme) {
       gap: spacing.lg,
     },
     sectionTitle: { ...type.subtitle, marginBottom: spacing.md },
+    // P35: section header that pairs the title with the cap
+    // chip. flexDirection: row keeps them on the same line on
+    // wider screens, and the cap chip aligns to the baseline
+    // via alignSelf: 'center'.
+    sectionHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: spacing.sm,
+      marginBottom: spacing.md,
+    },
+    capChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      paddingHorizontal: spacing.sm,
+      paddingVertical: 4,
+      borderRadius: radius.pill,
+      borderWidth: 1,
+    },
+    capChipText: { ...type.caption, fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
+    loadMoreBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.xs,
+      marginTop: spacing.md,
+      paddingVertical: spacing.sm,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      minHeight: 40,
+    },
+    loadMoreText: { ...type.caption, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 },
     metricGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
     barRow: { marginBottom: spacing.md },
     barHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: spacing.xs },
