@@ -1,302 +1,279 @@
-import { View, Text, StyleSheet, TouchableOpacity, KeyboardAvoidingView, Platform, Animated } from 'react-native';
-import { TextInput, ActivityIndicator } from 'react-native-paper';
-import { useState, useRef, useEffect } from 'react';
-import { signInWithEmailAndPassword } from "firebase/auth";
-import { auth } from "../../services/firebase";
+import { useState } from 'react';
+import {
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput as RNTextInput,
+  View,
+} from 'react-native';
+import { ActivityIndicator } from 'react-native-paper';
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import * as Haptics from 'expo-haptics';
 
-const COLORS = {
-  bg: '#0F0F0F',
-  surface: '#1A1A1A',
-  border: '#2A2A2A',
-  gold: '#C9A84C',
-  goldLight: '#E8C97A',
-  text: '#F0EDE6',
-  muted: '#7A7670',
-  error: '#E07070',
-  inputBg: '#161616',
-};
+import { auth } from '../../services/firebase';
+import { logger } from '../../services/logger';
+import { useAppTheme } from '../../theme/AppThemeContext';
+import { useLanguage } from '../../contexts/LanguageContext';
+import { snackbar } from '../../hooks/useSnackbar';
+
+import AmbientGlow from '../../components/AmbientGlow';
+import FadeInUp from '../../components/FadeInUp';
+import { layout, radius, spacing, type } from '../../theme/tokens';
 
 export default function SignIn({ navigation }) {
+  const { theme } = useAppTheme();
+  const { t: tAll, language } = useLanguage();
+  const t = tAll('auth');
+  const tApp = tAll('app');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [focusedField, setFocusedField] = useState(null);
-
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(32)).current;
-
-  useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, { toValue: 1, duration: 700, useNativeDriver: true }),
-      Animated.timing(slideAnim, { toValue: 0, duration: 600, useNativeDriver: true }),
-    ]).start();
-  }, []);
+  // The screen-level entrance is a single FadeInUp wrapper. The
+  // prior implementation nested RN's `Animated.View` outside a
+  // Reanimated `FadeInUp`, and on a cold start the worklet
+  // runtime occasionally failed to deliver the animated value,
+  // leaving the screen at `opacity: 0` for the lifetime of the
+  // component. The fix lives in `FadeInUp.js` (useLayoutEffect
+  // instead of useEffect) plus this ScrollView, which prevents
+  // the content from being clipped on short viewports.
+  // `language` is read so the component re-renders on locale change.
+  void language;
 
   const validate = () => {
-    if (!email.includes('@')) return "Enter a valid email address";
-    if (password.length < 6) return "Password must be at least 6 characters";
+    if (!email.includes('@')) return t.errors.emailInvalid;
+    if (password.length < 8) return t.errors.passwordShort;
     return null;
   };
 
   const handleSignIn = async () => {
     const validationError = validate();
-    if (validationError) { setError(validationError); return; }
+    if (validationError) {
+      setError(validationError);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      return;
+    }
+    setError('');
+    setLoading(true);
     try {
-      setLoading(true);
-      setError('');
-      await signInWithEmailAndPassword(auth, email, password);
+      const authPromise = signInWithEmailAndPassword(auth, email, password);
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('timeout')), 15000)
+      );
+      await Promise.race([authPromise, timeoutPromise]);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      snackbar.success(`Welcome back to ${tApp.name}`);
     } catch (err) {
-      setError("Invalid email or password");
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      logger.logError('auth/SignIn', err);
+      if (err.message === 'timeout') setError(t.errors.timeout);
+      else if (err.code === 'auth/user-not-found') setError(t.errors.noUser);
+      else if (err.code === 'auth/wrong-password') setError(t.errors.wrongPassword);
+      else if (err.code === 'auth/invalid-email') setError(t.errors.invalidEmail);
+      else if (err.code === 'auth/too-many-requests') setError(t.errors.tooManyRequests);
+      else setError(t.errors.invalidCredentials);
     } finally {
       setLoading(false);
     }
   };
+
+  const styles = createStyles(theme);
 
   return (
     <KeyboardAvoidingView
       style={styles.root}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      {/* Background accent */}
-      <View style={styles.glowTop} />
-      <View style={styles.glowBottom} />
+      <AmbientGlow variant="top" opacity={0.8} />
+      <AmbientGlow variant="bottom" opacity={0.6} />
 
-      <Animated.View style={[styles.container, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
-
-        {/* Logo / Brand mark */}
+      <Pressable
+        // Tap-to-dismiss keyboard. P28: tapping outside an input on
+        // the auth screen used to leave the keyboard up. The
+        // ScrollView's `keyboardShouldPersistTaps="handled"` already
+        // handles taps *on* tappable children, so this Pressable
+        // only fires for background taps.
+        style={styles.dismissLayer}
+        onPress={() => Keyboard.dismiss()}
+        accessible={false}
+      >
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <FadeInUp delay={0} duration={420} distance={20}>
         <View style={styles.brandMark}>
           <View style={styles.brandDiamond} />
         </View>
 
-        {/* Heading */}
-        <Text style={styles.heading}>Welcome{'\n'}Back</Text>
-        <Text style={styles.subheading}>Sign in to continue</Text>
+        <Text style={styles.heading}>{t.welcome}</Text>
+        <Text style={styles.subheading}>{t.welcomeSub}</Text>
 
-        {/* Divider */}
         <View style={styles.divider}>
-          <View style={styles.dividerLine} />
-          <View style={styles.dividerDot} />
-          <View style={styles.dividerLine} />
+          <View style={[styles.dividerLine, { backgroundColor: theme.border }]} />
+          <View style={[styles.dividerDot, { backgroundColor: theme.primary }]} />
+          <View style={[styles.dividerLine, { backgroundColor: theme.border }]} />
         </View>
 
-        {/* Form */}
-        <View style={styles.form}>
-          <View style={[styles.inputWrapper, focusedField === 'email' && styles.inputWrapperFocused]}>
-            <Text style={styles.inputLabel}>EMAIL</Text>
-            <TextInput
+        <FadeInUp delay={100}>
+          <View style={[styles.inputWrapper, focusedField === 'email' && styles.inputWrapperFocused, { backgroundColor: theme.surfaceRaised, borderColor: focusedField === 'email' ? theme.primary : theme.border }]}>
+            <Text style={[styles.inputLabel, { color: theme.primary }]}>{t.email}</Text>
+            <RNTextInput
               value={email}
               onChangeText={setEmail}
               onFocus={() => setFocusedField('email')}
               onBlur={() => setFocusedField(null)}
               keyboardType="email-address"
               autoCapitalize="none"
-              style={styles.input}
-              underlineColor="transparent"
-              activeUnderlineColor="transparent"
-              textColor={COLORS.text}
-              theme={{ colors: { background: 'transparent' } }}
-              placeholderTextColor={COLORS.muted}
-              placeholder="you@example.com"
+              accessibilityLabel={t.email}
+              style={[styles.input, { color: theme.text }]}
+              placeholder={t.emailPlaceholder}
+              placeholderTextColor={theme.muted}
             />
           </View>
+        </FadeInUp>
 
-          <View style={[styles.inputWrapper, focusedField === 'password' && styles.inputWrapperFocused]}>
-            <Text style={styles.inputLabel}>PASSWORD</Text>
-            <TextInput
+        <FadeInUp delay={180}>
+          <View style={[styles.inputWrapper, focusedField === 'password' && styles.inputWrapperFocused, { backgroundColor: theme.surfaceRaised, borderColor: focusedField === 'password' ? theme.primary : theme.border }]}>
+            <Text style={[styles.inputLabel, { color: theme.primary }]}>{t.password}</Text>
+            <RNTextInput
               value={password}
               onChangeText={setPassword}
               onFocus={() => setFocusedField('password')}
               onBlur={() => setFocusedField(null)}
               secureTextEntry
-              style={styles.input}
-              underlineColor="transparent"
-              activeUnderlineColor="transparent"
-              textColor={COLORS.text}
-              theme={{ colors: { background: 'transparent' } }}
-              placeholderTextColor={COLORS.muted}
-              placeholder="••••••••"
+              accessibilityLabel={t.password}
+              style={[styles.input, { color: theme.text }]}
+              placeholder={t.passwordPlaceholder}
+              placeholderTextColor={theme.muted}
             />
           </View>
+        </FadeInUp>
 
-          {error ? (
-            <View style={styles.errorBox}>
-              <Text style={styles.errorText}>{error}</Text>
-            </View>
-          ) : null}
+        <Pressable
+          onPress={() => navigation.navigate('ForgotPassword')}
+          accessibilityRole="link"
+          accessibilityLabel={t.forgotPassword}
+          hitSlop={8}
+          style={({ pressed }) => [styles.forgotWrap, pressed && { opacity: 0.7 }]}
+        >
+          <Text style={[styles.forgotText, { color: theme.primary }]}>{t.forgotPassword}</Text>
+        </Pressable>
 
-          <TouchableOpacity
-            style={[styles.button, loading && styles.buttonDisabled]}
+        {error ? (
+          <View
+            style={[styles.errorBox, { backgroundColor: theme.dangerSoft, borderLeftColor: theme.danger }]}
+            accessibilityLiveRegion="polite"
+          >
+            <Text style={[styles.errorText, { color: theme.danger }]}>{error}</Text>
+          </View>
+        ) : null}
+
+        <FadeInUp delay={260}>
+          <Pressable
             onPress={handleSignIn}
             disabled={loading}
-            activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel={t.signIn}
+            style={({ pressed }) => [
+              styles.button,
+              { backgroundColor: theme.primary, opacity: loading ? 0.6 : pressed ? 0.85 : 1 },
+            ]}
           >
-            {loading
-              ? <ActivityIndicator color={COLORS.bg} size={20} />
-              : <Text style={styles.buttonText}>Sign In</Text>
-            }
-          </TouchableOpacity>
+            {loading ? (
+              <ActivityIndicator color={theme.primaryText} size={20} />
+            ) : (
+              <Text style={[styles.buttonText, { color: theme.primaryText }]}>{t.signIn}</Text>
+            )}
+          </Pressable>
 
           <View style={styles.footer}>
-            <Text style={styles.footerText}>Don't have an account? </Text>
-            <TouchableOpacity onPress={() => navigation.navigate('SignUp')}>
-              <Text style={styles.footerLink}>Sign Up</Text>
-            </TouchableOpacity>
+            <Text style={[styles.footerText, { color: theme.muted }]}>{t.noAccount} </Text>
+            <Pressable
+              onPress={() => navigation.navigate('SignUp')}
+              accessibilityRole="button"
+              accessibilityLabel={t.signUp}
+            >
+              <Text style={[styles.footerLink, { color: theme.primary }]}>{t.signUp}</Text>
+            </Pressable>
           </View>
-        </View>
-
-      </Animated.View>
+        </FadeInUp>
+      </FadeInUp>
+      </ScrollView>
+      </Pressable>
     </KeyboardAvoidingView>
   );
 }
 
-const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: COLORS.bg,
-    justifyContent: 'center',
-  },
-  glowTop: {
-    position: 'absolute',
-    top: -80,
-    left: '20%',
-    width: 260,
-    height: 260,
-    borderRadius: 130,
-    backgroundColor: COLORS.gold,
-    opacity: 0.06,
-  },
-  glowBottom: {
-    position: 'absolute',
-    bottom: -100,
-    right: '10%',
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    backgroundColor: COLORS.gold,
-    opacity: 0.04,
-  },
-  container: {
-    paddingHorizontal: 28,
-  },
-  brandMark: {
-    alignItems: 'flex-start',
-    marginBottom: 32,
-  },
-  brandDiamond: {
-    width: 18,
-    height: 18,
-    backgroundColor: COLORS.gold,
-    transform: [{ rotate: '45deg' }],
-  },
-  heading: {
-    fontSize: 44,
-    fontWeight: '700',
-    color: COLORS.text,
-    letterSpacing: -1,
-    lineHeight: 50,
-    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
-  },
-  subheading: {
-    fontSize: 14,
-    color: COLORS.muted,
-    marginTop: 8,
-    letterSpacing: 1.5,
-    textTransform: 'uppercase',
-  },
-  divider: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: 28,
-    gap: 8,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: COLORS.border,
-  },
-  dividerDot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: COLORS.gold,
-  },
-  form: {
-    gap: 16,
-  },
-  inputWrapper: {
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 12,
-    backgroundColor: COLORS.inputBg,
-    paddingHorizontal: 16,
-    paddingTop: 10,
-    paddingBottom: 4,
-    transition: 'border-color 0.2s',
-  },
-  inputWrapperFocused: {
-    borderColor: COLORS.gold,
-  },
-  inputLabel: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: COLORS.gold,
-    letterSpacing: 2,
-    marginBottom: 2,
-  },
-  input: {
-    backgroundColor: 'transparent',
-    fontSize: 15,
-    paddingHorizontal: 0,
-    height: 40,
-  },
-  errorBox: {
-    backgroundColor: 'rgba(224,112,112,0.08)',
-    borderRadius: 8,
-    borderLeftWidth: 3,
-    borderLeftColor: COLORS.error,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  errorText: {
-    color: COLORS.error,
-    fontSize: 13,
-  },
-  button: {
-    backgroundColor: COLORS.gold,
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: 'center',
-    marginTop: 4,
-    shadowColor: COLORS.gold,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 6,
-  },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  buttonText: {
-    color: COLORS.bg,
-    fontSize: 15,
-    fontWeight: '700',
-    letterSpacing: 1.5,
-    textTransform: 'uppercase',
-  },
-  footer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginTop: 8,
-    paddingBottom: 8,
-  },
-  footerText: {
-    color: COLORS.muted,
-    fontSize: 14,
-  },
-  footerLink: {
-    color: COLORS.goldLight,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-});
+function createStyles(theme) {
+  return StyleSheet.create({
+    root: { flex: 1, backgroundColor: theme.background },
+    // P28: tap-anywhere-to-dismiss-keyboard layer. Sits between
+    // KeyboardAvoidingView and the ScrollView. `accessible={false}`
+    // so the screen reader doesn't see two layers.
+    dismissLayer: { flex: 1 },
+    // ScrollView contentContainerStyle. `flexGrow: 1` lets the
+    // content fill the viewport on tall screens and scroll on
+    // short ones (small phones with the keyboard open). The old
+    // `KeyboardAvoidingView` with `justifyContent: 'center'`
+    // clipped content above the fold when the content was taller
+    // than the available space — combined with the FadeInUp
+    // `translateY` start, the top half stayed off-screen.
+    scroll: {
+      flexGrow: 1,
+      justifyContent: 'center',
+      paddingVertical: spacing.xxl,
+    },
+    forgotWrap: {
+      alignSelf: 'flex-end',
+      paddingVertical: spacing.xs,
+      paddingHorizontal: spacing.xs,
+      marginTop: -spacing.xs,
+      marginBottom: spacing.md,
+    },
+    forgotText: { ...type.bodyStrong, fontSize: 13 },
+    container: {
+      width: '100%',
+      maxWidth: layout.maxContentWidth,
+      alignSelf: 'center',
+      paddingHorizontal: spacing.xl,
+    },
+    brandMark: { alignItems: 'flex-start', marginBottom: spacing.xl },
+    brandDiamond: {
+      width: 18, height: 18, backgroundColor: theme.primary,
+      transform: [{ rotate: '45deg' }],
+    },
+    heading: {
+      fontSize: 44, fontWeight: '700', color: theme.text, letterSpacing: -1, lineHeight: 50,
+      fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+    },
+    subheading: { ...type.eyebrow, fontSize: 13, color: theme.muted, marginTop: spacing.sm, letterSpacing: 1.5 },
+    divider: { flexDirection: 'row', alignItems: 'center', marginVertical: spacing.xl, gap: spacing.sm },
+    dividerLine: { flex: 1, height: 1 },
+    dividerDot: { width: 4, height: 4, borderRadius: 2 },
+    inputWrapper: {
+      borderWidth: 1, borderRadius: radius.md, paddingHorizontal: spacing.lg,
+      paddingTop: spacing.sm, paddingBottom: spacing.xs, marginBottom: spacing.md,
+    },
+    inputWrapperFocused: {},
+    inputLabel: { ...type.eyebrow, fontSize: 10, marginBottom: 2 },
+    input: { backgroundColor: 'transparent', fontSize: 15, paddingHorizontal: 0, height: 40 },
+    errorBox: { borderRadius: radius.sm, borderLeftWidth: 3, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, marginBottom: spacing.md },
+    errorText: { fontSize: 13 },
+    button: {
+      paddingVertical: spacing.lg, borderRadius: radius.md, alignItems: 'center',
+      minHeight: 52, shadowColor: theme.primary, shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.3, shadowRadius: 12, elevation: 6,
+    },
+    buttonText: { ...type.bodyStrong, fontSize: 15, letterSpacing: 1.5, textTransform: 'uppercase' },
+    footer: { flexDirection: 'row', justifyContent: 'center', marginTop: spacing.md, paddingBottom: spacing.sm },
+    footerText: { fontSize: 14 },
+    footerLink: { fontSize: 14, fontWeight: '600' },
+  });
+}

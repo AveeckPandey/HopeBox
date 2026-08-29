@@ -1,28 +1,192 @@
+import { useMemo } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+
+import { useAppTheme } from '../theme/AppThemeContext';
+import { layout, spacing, type } from '../theme/tokens';
+
 import Dashboard from '../screens/main/Dashboard';
-import Inventory from '../screens/main/Inventory';
-import ScanQR from '../screens/main/ScanQR';
 import Boxes from '../screens/main/Boxes';
+import BoxDetails from '../screens/main/BoxDetails';
 import AddBox from '../screens/main/AddBox';
 import EditBox from '../screens/main/EditBox';
-import BoxDetails from '../screens/main/BoxDetails';
-import AdminInventory from '../screens/main/AdminInventory';
 import PrintQR from '../screens/main/PrintQR';
+import ScanQR from '../screens/main/ScanQR';
+import Analytics from '../screens/main/Analytics';
+import AdminInventory from '../screens/main/AdminInventory';
+import AuditLog from '../screens/main/AuditLog';
+import Settings from '../screens/main/Settings';
+import Commodities from '../screens/main/Commodities';
+import Templates from '../screens/main/Templates';
 
+const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
+
+// Custom themed tab bar — keeps brand consistency (black surface,
+// orange active state) and respects safe-area insets.
+function CustomTabBar({ state, descriptors, navigation }) {
+  const { theme } = useAppTheme();
+  const insets = useSafeAreaInsets();
+  // P40: memoize createStyles so the StyleSheet object is
+  // referentially stable across tab presses. The tab bar re-renders
+  // on every navigation event; without useMemo, createStyles rebuilds
+  // the whole StyleSheet on each render and the tab Pressables
+  // see fresh style objects, defeating the work React Navigation
+  // does to keep the bar stable.
+  const styles = useMemo(() => createStyles(theme), [theme]);
+
+  return (
+    <View
+      style={[
+        styles.bar,
+        { paddingBottom: Math.max(insets.bottom, spacing.sm), height: layout.tabBarHeight + insets.bottom },
+      ]}
+    >
+      {state.routes.map((route, index) => {
+        const { options } = descriptors[route.key];
+        const label = options.tabBarLabel ?? options.title ?? route.name;
+        const isFocused = state.index === index;
+
+        const onPress = () => {
+          const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
+          if (!isFocused && !event.defaultPrevented) {
+            navigation.navigate(route.name);
+          }
+        };
+
+        const color = isFocused ? theme.tabBarActive : theme.tabBarInactive;
+        const iconName = options.tabBarIconName;
+
+        return (
+          <Pressable
+            key={route.key}
+            accessibilityRole="button"
+            accessibilityState={isFocused ? { selected: true } : {}}
+            accessibilityLabel={`${label} tab`}
+            onPress={onPress}
+            style={({ pressed }) => [styles.tab, pressed && { opacity: 0.7 }]}
+          >
+            <MaterialCommunityIcons name={iconName} size={24} color={color} />
+            <Text
+              style={[styles.label, { color }, isFocused && styles.labelActive]}
+              numberOfLines={1}
+            >
+              {label}
+            </Text>
+            {isFocused ? (
+              <View style={[styles.activeDot, { backgroundColor: theme.primary }]} />
+            ) : null}
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+// One root stack holds every screen. Tabs are rendered as a screen
+// inside the stack so any tab can navigate to any flow screen
+// (e.g. Scan → BoxDetails) without cross-stack wiring.
+function MainTabs() {
+  return (
+    <Tab.Navigator
+      screenOptions={{ headerShown: false }}
+      tabBar={(props) => <CustomTabBar {...props} />}
+    >
+      <Tab.Screen
+        name="Home"
+        component={Dashboard}
+        options={{
+          title: 'Home',
+          tabBarLabel: 'Home',
+          tabBarIconName: 'view-dashboard-outline',
+        }}
+      />
+      <Tab.Screen
+        name="Boxes"
+        component={Boxes}
+        options={{
+          title: 'Boxes',
+          tabBarLabel: 'Boxes',
+          tabBarIconName: 'package-variant-closed',
+        }}
+      />
+      <Tab.Screen
+        name="Scan"
+        component={ScanQR}
+        options={{
+          title: 'Scan',
+          tabBarLabel: 'Scan',
+          tabBarIconName: 'qrcode-scan',
+        }}
+      />
+      <Tab.Screen
+        name="Analytics"
+        component={Analytics}
+        options={{
+          title: 'Analytics',
+          tabBarLabel: 'Analytics',
+          tabBarIconName: 'chart-bar',
+        }}
+      />
+      <Tab.Screen
+        name="Settings"
+        component={Settings}
+        options={{
+          title: 'Settings',
+          tabBarLabel: 'Settings',
+          tabBarIconName: 'cog-outline',
+        }}
+      />
+    </Tab.Navigator>
+  );
+}
 
 export default function AppNavigator() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="Dashboard" component={Dashboard} />
+      <Stack.Screen name="MainTabs" component={MainTabs} />
       <Stack.Screen name="BoxDetails" component={BoxDetails} />
-      <Stack.Screen name="Inventory" component={Inventory} />
-      <Stack.Screen name="ScanQR" component={ScanQR} />
-      <Stack.Screen name="EditBox" component={EditBox} />
-      <Stack.Screen name="Boxes" component={Boxes} />
       <Stack.Screen name="AddBox" component={AddBox} />
+      <Stack.Screen name="EditBox" component={EditBox} />
       <Stack.Screen name="PrintQR" component={PrintQR} />
       <Stack.Screen name="AdminInventory" component={AdminInventory} />
+      <Stack.Screen name="AuditLog" component={AuditLog} />
+      <Stack.Screen name="Commodities" component={Commodities} />
+      <Stack.Screen name="Templates" component={Templates} />
     </Stack.Navigator>
   );
+}
+
+function createStyles(theme) {
+  return StyleSheet.create({
+    bar: {
+      flexDirection: 'row',
+      backgroundColor: theme.tabBar,
+      borderTopWidth: 1,
+      borderTopColor: theme.tabBarBorder,
+    },
+    tab: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingTop: spacing.sm,
+      paddingHorizontal: spacing.xs,
+      gap: 2,
+    },
+    label: {
+      ...type.caption,
+      fontSize: 11,
+      marginTop: 2,
+    },
+    labelActive: { fontWeight: '800' },
+    activeDot: {
+      width: 4,
+      height: 4,
+      borderRadius: 2,
+      marginTop: 2,
+    },
+  });
 }

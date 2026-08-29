@@ -31,8 +31,9 @@ yarn-error.*
 *.pem
 
 # local env files
-.env*.local
-src/services/
+.env
+.env.local
+.env.*.local
 
 # typescript
 *.tsbuildinfo
@@ -42,3 +43,6 @@ app-example
 # generated native folders
 /ios
 /android
+
+# Claude session auto-memory (not part of the app)
+/memory/

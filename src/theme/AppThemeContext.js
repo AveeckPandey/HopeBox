@@ -1,46 +1,79 @@
 import { createContext, useContext } from 'react';
 
+// Black + Deep Orange brand palette.
+// Primary is the same in both modes (burnt orange #EA580C) so the brand
+// reads identically regardless of theme choice.
+
 export const palettes = {
   dark: {
     mode: 'dark',
-    background: '#0F0F0F',
-    backgroundAlt: '#151515',
-    surface: '#1A1A1A',
-    surfaceRaised: '#202020',
+    // Surfaces
+    background: '#0A0A0A',
+    backgroundAlt: '#101010',
+    surface: '#161616',
+    surfaceRaised: '#1F1F1F',
+    // Brand
+    primary: '#EA580C',
+    primaryDark: '#C2410C',
+    primarySoft: 'rgba(234,88,12,0.14)',
+    primaryText: '#FFFFFF',
+    // Text
+    text: '#F5F2EC',
+    textInverse: '#0A0A0A',
+    muted: '#A8A29A',
+    // Lines
     border: '#2A2A2A',
-    primary: '#C9A84C',
-    primarySoft: 'rgba(201,168,76,0.12)',
-    primaryText: '#0F0F0F',
-    text: '#F0EDE6',
-    muted: '#9A958B',
-    danger: '#E07070',
-    success: '#3FA96B',
-    warning: '#D8A14A',
-    shadow: '#000000'
+    borderStrong: '#3A3A3A',
+    // Status
+    success: '#4ADE80',
+    successSoft: 'rgba(74,222,128,0.14)',
+    danger: '#F87171',
+    dangerSoft: 'rgba(248,113,113,0.14)',
+    warning: '#FBBF24',
+    warningSoft: 'rgba(251,191,36,0.14)',
+    // Effects
+    shadow: '#000000',
+    overlay: 'rgba(0,0,0,0.65)',
+    // Tab bar
+    tabBar: '#0A0A0A',
+    tabBarBorder: '#1F1F1F',
+    tabBarActive: '#EA580C',
+    tabBarInactive: '#A8A29A',
   },
   light: {
     mode: 'light',
-    background: '#EAF3FF',
-    backgroundAlt: '#DCEBFF',
+    background: '#FFF7F2',
+    backgroundAlt: '#FBEFE6',
     surface: '#FFFFFF',
-    surfaceRaised: '#F7FAFF',
-    border: '#BFD4F2',
-    primary: '#1F5ED8',
-    primarySoft: 'rgba(31,94,216,0.10)',
+    surfaceRaised: '#FBEFE6',
+    primary: '#EA580C',
+    primaryDark: '#C2410C',
+    primarySoft: 'rgba(234,88,12,0.10)',
     primaryText: '#FFFFFF',
-    text: '#102447',
-    muted: '#6A7C9E',
-    danger: '#C85656',
-    success: '#2F8D59',
-    warning: '#C98A29',
-    shadow: '#8CA7D8'
-  }
+    text: '#1A1A1A',
+    textInverse: '#FFFFFF',
+    muted: '#5A5550',
+    border: '#F2D9C9',
+    borderStrong: '#E5C2AC',
+    success: '#16A34A',
+    successSoft: 'rgba(22,163,74,0.10)',
+    danger: '#DC2626',
+    dangerSoft: 'rgba(220,38,38,0.10)',
+    warning: '#D97706',
+    warningSoft: 'rgba(217,119,6,0.10)',
+    shadow: '#A85A2A',
+    overlay: 'rgba(0,0,0,0.45)',
+    tabBar: '#FFFFFF',
+    tabBarBorder: '#F2D9C9',
+    tabBarActive: '#EA580C',
+    tabBarInactive: '#5A5550',
+  },
 };
 
 export const AppThemeContext = createContext({
-  theme: palettes.light,
-  themeName: 'light',
-  toggleTheme: () => {}
+  theme: palettes.dark,
+  themeName: 'dark',
+  toggleTheme: () => {},
 });
 
 export function useAppTheme() {

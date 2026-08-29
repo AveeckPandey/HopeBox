@@ -1,593 +1,668 @@
-import { useEffect, useRef, useState } from 'react';
-import {
-  Animated,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
-import { Button, Card, TextInput } from 'react-native-paper';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { TextInput } from 'react-native-paper';
 import { signOut } from 'firebase/auth';
-import { collection, doc, onSnapshot } from "firebase/firestore";
+import { collection, doc, onSnapshot, query, where } from 'firebase/firestore';
+import * as Haptics from 'expo-haptics';
+
 import { auth, db } from '../../services/firebase';
 import { useAppTheme } from '../../theme/AppThemeContext';
+import { useWarehouse } from '../../contexts/WarehouseContext';
+import { useUser } from '../../contexts/UserContext';
+import { useCommodities, useTemplates } from '../../contexts/CommoditiesContext';
+import {
+  boxesByEarliestExpiry,
+  chartRowsForTemplate,
+  flattenContents,
+  possibleBoxesFromTemplate,
+  shortageForTarget,
+} from '../../services/inventoryMath';
+import { exportToCSV, exportToPDF } from '../../services/export';
+import { logAction } from '../../services/audit';
+import { useLanguage } from '../../contexts/LanguageContext';
+import { snackbar } from '../../hooks/useSnackbar';
+import { safeIcon } from '../../services/commodities';
+
+import ScreenHeader from '../../components/ScreenHeader';
+import SurfaceCard from '../../components/SurfaceCard';
+import MetricTile from '../../components/MetricTile';
+import StatusBadge from '../../components/StatusBadge';
+import FadeInUp from '../../components/FadeInUp';
+import AmbientGlow from '../../components/AmbientGlow';
+import { layout, radius, spacing, type } from '../../theme/tokens';
 
 export default function Dashboard({ navigation }) {
   const { theme, themeName, toggleTheme } = useAppTheme();
-  const [inventory, setInventory] = useState({
-    rice: 0,
-    dal: 0,
-    sachets: 0
-  });
+  const { currentWarehouse } = useWarehouse();
+  const { userData } = useUser();
+  const { commodities, byId } = useCommodities();
+  const { defaultTemplate } = useTemplates();
+  const { t: tAll } = useLanguage();
+  const t = tAll('dashboard');
+
+  const [inventory, setInventory] = useState({});
   const [boxes, setBoxes] = useState([]);
-  const [targetBoxes, setTargetBoxes] = useState(100);
-
-  const heroAnim = useRef(new Animated.Value(0)).current;
-  const cardsAnim = useRef([
-    new Animated.Value(0),
-    new Animated.Value(0),
-    new Animated.Value(0),
-    new Animated.Value(0),
-    new Animated.Value(0)
-  ]).current;
+  const [targetBoxes, setTargetBoxes] = useState('100');
+  const styles = useMemo(() => createStyles(theme), [theme]);
 
   useEffect(() => {
-    Animated.parallel([
-      Animated.timing(heroAnim, {
-        toValue: 1,
-        duration: 550,
-        useNativeDriver: true
-      }),
-      Animated.stagger(
-        110,
-        cardsAnim.map((anim) =>
-          Animated.timing(anim, {
-            toValue: 1,
-            duration: 520,
-            useNativeDriver: true
-          })
-        )
-      )
-    ]).start();
-  }, [cardsAnim, heroAnim]);
-
-  useEffect(() => {
-    const unsubscribe = onSnapshot(doc(db, "inventory", "main"), (snap) => {
-      if (snap.exists()) {
-        setInventory({
-          rice: Number(snap.data().rice ?? 0),
-          dal: Number(snap.data().dal ?? 0),
-          sachets: Number(snap.data().sachets ?? 0)
-        });
+    const inventoryId = currentWarehouse?.id || 'main';
+    const unsubscribe = onSnapshot(doc(db, 'inventory', inventoryId), (snap) => {
+      if (!snap.exists()) {
+        setInventory({});
+        return;
       }
+      // Read the new contents-map shape. Legacy fields (rice/dal/
+      // sachets) are also exposed under their commodity ids so the
+      // rest of the dashboard doesn't have to special-case them.
+      const data = snap.data();
+      const next = {};
+      for (const [k, v] of Object.entries(data)) {
+        if (k === 'rice' || k === 'dal' || k === 'sachets') {
+          // Map legacy keys to their commodity ids.
+          if (k === 'rice') next['commodity_rice'] = Number(v) || 0;
+          else if (k === 'dal') next['commodity_dal'] = Number(v) || 0;
+          else if (k === 'sachets') next['commodity_sachets'] = Number(v) || 0;
+        } else if (k === 'updatedAt' || k === 'createdAt') {
+          // Skip timestamps — they're not commodity counts.
+          continue;
+        } else {
+          next[k] = Number(v) || 0;
+        }
+      }
+      setInventory(next);
     });
-
     return () => unsubscribe();
-  }, []);
+  }, [currentWarehouse]);
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, "boxes"), (snapshot) => {
-      const data = snapshot.docs.map((boxDoc) => ({
-        id: boxDoc.id,
-        ...boxDoc.data()
-      }));
-      setBoxes(data);
+    let boxesRef = collection(db, 'boxes');
+    if (currentWarehouse?.id) {
+      boxesRef = query(boxesRef, where('warehouseId', '==', currentWarehouse.id));
+    }
+    const unsubscribe = onSnapshot(boxesRef, (snapshot) => {
+      setBoxes(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
     });
-
     return () => unsubscribe();
-  }, []);
+  }, [currentWarehouse]);
 
-  let stored = 0;
-  let dispatched = 0;
-  let returned = 0;
+  const counts = useMemo(() => {
+    let stored = 0, dispatched = 0, returned = 0;
+    boxes.forEach((b) => {
+      if (b.status === 'stored') stored++;
+      else if (b.status === 'dispatched') dispatched++;
+      else if (b.status === 'returned') returned++;
+    });
+    return { stored, dispatched, returned };
+  }, [boxes]);
 
-  boxes.forEach((box) => {
-    if (box.status === "stored") stored++;
-    if (box.status === "dispatched") dispatched++;
-    if (box.status === "returned") returned++;
-  });
+  // Template-driven planning: how many boxes can we build right now,
+  // and what would we need to hit the target? Falls back to empty
+  // map if no template is configured yet. Memoised so the
+  // downstream useMemo hooks (possibleBoxes, shortageMap, chartData)
+  // don't see a new reference on every render — without this the
+  // `templateCommodities` in their dep arrays is a fresh `{}` every
+  // render and they all re-run.
+  const templateCommodities = useMemo(
+    () => defaultTemplate?.commodities || {},
+    [defaultTemplate]
+  );
+  const targetNum = Number(targetBoxes) || 0;
+  const possibleBoxes = useMemo(
+    () => possibleBoxesFromTemplate(inventory, templateCommodities),
+    [inventory, templateCommodities]
+  );
+  const shortageMap = useMemo(
+    () => shortageForTarget(inventory, templateCommodities, targetNum),
+    [inventory, templateCommodities, targetNum]
+  );
+  const completionRate = Math.min((possibleBoxes / Math.max(targetNum, 1)) * 100, 100);
 
-  const standardBox = {
-    rice: 20,
-    dal: 20,
-    sachets: 50
+  // Chart rows for the live-inventory card, pulled from the live
+  // commodity catalog so it works for any sector (food, medical, hygiene).
+  const chartData = useMemo(
+    () => chartRowsForTemplate(inventory, templateCommodities).map((row) => {
+      const c = byId[row.commodityId] || { name: row.commodityId, unit: '', color: theme.primary };
+      return {
+        id: row.commodityId,
+        label: c.name,
+        value: row.onHand,
+        requiredPerBox: row.requiredPerBox,
+        shortage: shortageMap[row.commodityId] || 0,
+        unit: c.unit,
+        color: c.color || theme.primary,
+      };
+    }),
+    [inventory, templateCommodities, byId, shortageMap, theme.primary]
+  );
+  const maxChartValue = Math.max(...chartData.map((item) => item.value), 1);
+
+  // FEFO awareness: for each commodity with expiry-tracking, surface
+  // the next box that's about to expire in this warehouse.
+  const fefoAlerts = useMemo(() => {
+    const alerts = [];
+    for (const c of commodities) {
+      if (!c.expiryTracking) continue;
+      const expiring = boxesByEarliestExpiry(boxes, c.id);
+      const next = expiring[0];
+      if (!next) continue;
+      const line = next.contents?.[c.id];
+      const expiryStr = line?.expiryDate;
+      if (!expiryStr) continue;
+      alerts.push({
+        commodity: c,
+        boxId: next.id,
+        expiry: expiryStr,
+        batch: line?.batchNumber || null,
+      });
+    }
+    return alerts.slice(0, 5);
+  }, [commodities, boxes]);
+
+  const handleThemeToggle = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    toggleTheme();
   };
 
-  const requiredRice = targetBoxes * standardBox.rice;
-  const requiredDal = targetBoxes * standardBox.dal;
-  const requiredSachets = targetBoxes * standardBox.sachets;
+  const handleSignOut = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    try {
+      await signOut(auth);
+      snackbar.info('Signed out');
+    } catch (_e) {
+      snackbar.error('Could not sign out');
+    }
+  };
 
-  const shortageRice = Math.max(requiredRice - inventory.rice, 0);
-  const shortageDal = Math.max(requiredDal - inventory.dal, 0);
-  const shortageSachets = Math.max(requiredSachets - inventory.sachets, 0);
+  // P38: stable navigation callbacks. Without useCallback here
+  // every Dashboard render hands `ActionTile` a new onPress
+  // identity. ActionTile isn't memoised, so this matters less
+  // than Boxes' renderItem, but it's also the more honest
+  // shape for the action tiles, and it stops the inline
+  // arrow allocations on every keystroke in the target input.
+  const goBoxes = useCallback(() => navigation.navigate('Boxes'), [navigation]);
+  const goScan = useCallback(() => navigation.navigate('ScanQR'), [navigation]);
+  const goInventory = useCallback(() => navigation.navigate('AdminInventory'), [navigation]);
+  const goAnalytics = useCallback(() => navigation.navigate('Analytics'), [navigation]);
+  const goAudit = useCallback(() => navigation.navigate('AuditLog'), [navigation]);
 
-  const possibleBoxes = Math.max(
-    Math.min(
-      Math.floor(inventory.rice / standardBox.rice),
-      Math.floor(inventory.dal / standardBox.dal),
-      Math.floor(inventory.sachets / standardBox.sachets)
-    ),
-    0
+  // P38: build the action-tile list. We intentionally do NOT wrap
+  // this in useMemo — `boxes` is a fresh reference on every Firestore
+  // snapshot, and the React compiler correctly notes that any memo
+  // here would invalidate every render anyway. The cost of
+  // reconstructing 7 small objects is negligible compared to the
+  // JSX the array drives.
+  //
+  // P45: empty-export guard. Without it the snackbar says
+  // "CSV exported" but the file is just a header row. Haptic
+  // warning + an explicit message is more honest.
+  const actionTiles = [
+    { key: 'boxes', icon: 'package-variant-closed', label: t.manageBoxes, onPress: goBoxes, primary: true },
+    { key: 'scan', icon: 'qrcode-scan', label: t.scanQR, onPress: goScan },
+    { key: 'inv', icon: 'warehouse', label: t.adminInventory, onPress: goInventory },
+    { key: 'analytics', icon: 'chart-bar', label: t.analytics, onPress: goAnalytics },
+    { key: 'audit', icon: 'history', label: t.auditLog, onPress: goAudit },
+    {
+      key: 'csv',
+      icon: 'file-export-outline',
+      label: t.exportCSV,
+      onPress: async () => {
+        if (boxes.length === 0) {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+          snackbar.error(t.exportEmpty);
+          return;
+        }
+        try {
+          const exportData = boxes.map((b) => {
+            const flat = flattenContents(b.contents || {});
+            return {
+              id: b.id,
+              ...flat,
+              status: b.status,
+              warehouse: b.warehouseId || 'default',
+              createdAt: b.createdAt?.toDate?.()?.toISOString() || '',
+            };
+          });
+          await exportToCSV(exportData, `hopebox-inventory-${Date.now()}`);
+          await logAction('export_csv', { count: boxes.length }, userData?.id);
+          snackbar.success(t.exportSuccess);
+        } catch (_e) {
+          snackbar.error(t.exportFailed);
+        }
+      },
+    },
+    {
+      key: 'pdf',
+      icon: 'file-pdf-box',
+      label: t.exportPDF,
+      onPress: async () => {
+        if (boxes.length === 0) {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+          snackbar.error(t.exportEmpty);
+          return;
+        }
+        try {
+          const exportData = boxes.map((b) => {
+            const flat = flattenContents(b.contents || {});
+            return {
+              id: b.id,
+              ...flat,
+              status: b.status,
+              warehouse: b.warehouseId || 'default',
+            };
+          });
+          await exportToPDF(exportData, 'HopeBox Inventory Report', `hopebox-report-${Date.now()}`);
+          await logAction('export_pdf', { count: boxes.length }, userData?.id);
+          snackbar.success(t.pdfSuccess);
+        } catch (_e) {
+          snackbar.error(t.pdfFailed);
+        }
+      },
+    },
+  ];
+
+  const statusRows = useMemo(
+    () => [
+      { status: 'stored', count: counts.stored },
+      { status: 'dispatched', count: counts.dispatched },
+      { status: 'returned', count: counts.returned },
+    ],
+    [counts.stored, counts.dispatched, counts.returned]
   );
 
-  const chartData = [
-    { label: 'Rice', value: inventory.rice, unit: 'kg', color: theme.primary },
-    { label: 'Dal', value: inventory.dal, unit: 'kg', color: theme.warning },
-    { label: 'Sachets', value: inventory.sachets, unit: '', color: theme.success }
-  ];
-  const maxChartValue = Math.max(...chartData.map((item) => item.value), 1);
-  const completionRate = Math.min((possibleBoxes / Math.max(targetBoxes, 1)) * 100, 100);
-  const styles = createStyles(theme);
-
-  const renderAnimatedCard = (index, content) => (
-    <Animated.View
-      style={{
-        opacity: cardsAnim[index],
-        transform: [
-          {
-            translateY: cardsAnim[index].interpolate({
-              inputRange: [0, 1],
-              outputRange: [28, 0]
-            })
-          }
-        ]
-      }}
-    >
-      {content}
-    </Animated.View>
+  const heroRight = (
+    <View style={styles.heroActions}>
+      <Pressable
+        onPress={handleThemeToggle}
+        accessibilityRole="button"
+        accessibilityLabel={`Switch to ${themeName === 'dark' ? 'light' : 'dark'} mode`}
+        style={({ pressed }) => [styles.pill, pressed && { opacity: 0.7 }]}
+      >
+        <MaterialCommunityIcons
+          name={themeName === 'dark' ? 'white-balance-sunny' : 'weather-night'}
+          size={14}
+          color={theme.primary}
+        />
+        <Text style={styles.pillText}>
+          {themeName === 'dark' ? t.themeLight : t.themeDark}
+        </Text>
+      </Pressable>
+      <Pressable
+        onPress={handleSignOut}
+        accessibilityRole="button"
+        accessibilityLabel={t.signOut}
+        style={({ pressed }) => [styles.pill, styles.pillGhost, pressed && { opacity: 0.7 }]}
+      >
+        <MaterialCommunityIcons name="logout" size={14} color={theme.text} />
+        <Text style={[styles.pillText, { color: theme.text }]}>{t.signOut}</Text>
+      </Pressable>
+    </View>
   );
 
   return (
     <View style={styles.screen}>
-      <View style={styles.glowTop} />
-      <View style={styles.glowBottom} />
-
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-      >
-        <Animated.View
-          style={[
-            styles.heroCard,
-            {
-              opacity: heroAnim,
-              transform: [
-                {
-                  translateY: heroAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [26, 0]
-                  })
-                }
-              ]
-            }
-          ]}
-        >
-          <View style={styles.heroTopRow}>
-            <View>
-              <Text style={styles.eyebrow}>NGO CONTROL CENTER</Text>
-              <Text style={styles.title}>Dashboard</Text>
-              <Text style={styles.subtitle}>
-                Track stock, box movement, and campaign readiness in real time.
-              </Text>
-            </View>
-
-            <View style={styles.heroActions}>
-              <Pressable style={styles.themePill} onPress={toggleTheme}>
-                <Text style={styles.themePillText}>
-                  {themeName === 'dark' ? 'Light Mode' : 'Dark Mode'}
-                </Text>
-              </Pressable>
-
-              <Pressable style={styles.signOutPill} onPress={() => signOut(auth)}>
-                <Text style={styles.signOutText}>Sign Out</Text>
-              </Pressable>
-            </View>
-          </View>
-
-          <View style={styles.heroStats}>
-            <View style={styles.heroStat}>
-              <Text style={styles.heroStatValue}>{possibleBoxes}</Text>
-              <Text style={styles.heroStatLabel}>Possible Boxes</Text>
-            </View>
-            <View style={styles.heroStatDivider} />
-            <View style={styles.heroStat}>
-              <Text style={styles.heroStatValue}>{boxes.length}</Text>
-              <Text style={styles.heroStatLabel}>Total Boxes</Text>
-            </View>
-            <View style={styles.heroStatDivider} />
-            <View style={styles.heroStat}>
-              <Text style={styles.heroStatValue}>{Math.round(completionRate)}%</Text>
-              <Text style={styles.heroStatLabel}>Target Coverage</Text>
-            </View>
-          </View>
-        </Animated.View>
-
-        {renderAnimatedCard(
-          0,
-          <Card style={styles.card}>
-            <Text style={styles.sectionTitle}>Live Inventory</Text>
-            <View style={styles.inventoryGrid}>
-              {chartData.map((item) => (
-                <View key={item.label} style={styles.metricTile}>
-                  <Text style={styles.metricLabel}>{item.label}</Text>
-                  <Text style={styles.metricValue}>
-                    {item.value}
-                    {item.unit ? ` ${item.unit}` : ''}
+      <AmbientGlow variant="dual" />
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        <View style={styles.contentWrap}>
+          <FadeInUp delay={0}>
+            <SurfaceCard tone="raised" padding={spacing.lg} style={styles.heroCard}>
+              <ScreenHeader
+                eyebrow={t.eyebrow}
+                title={t.title}
+                subtitle={t.subtitle}
+                style={{ marginBottom: 0 }}
+              />
+              <View style={styles.heroActionsRow}>{heroRight}</View>
+              {userData ? (
+                <View style={[styles.roleBadge, { backgroundColor: theme.primarySoft, borderColor: theme.primary }]}>
+                  <Text style={[styles.roleBadgeText, { color: theme.primary }]}>
+                    {userData.role?.toUpperCase() || 'STAFF'}
                   </Text>
+                </View>
+              ) : null}
+              <View style={[styles.heroStats, { backgroundColor: theme.surfaceRaised, borderColor: theme.border }]}>
+                <View style={styles.heroStat}>
+                  <Text style={[styles.heroStatValue, { color: theme.text }]} numberOfLines={1} adjustsFontSizeToFit>
+                    {possibleBoxes}
+                  </Text>
+                  <Text style={[styles.heroStatLabel, { color: theme.muted }]} numberOfLines={2}>
+                    {t.possibleBoxes}
+                  </Text>
+                </View>
+                <View style={[styles.heroStatDivider, { backgroundColor: theme.border }]} />
+                <View style={styles.heroStat}>
+                  <Text style={[styles.heroStatValue, { color: theme.text }]} numberOfLines={1} adjustsFontSizeToFit>
+                    {boxes.length}
+                  </Text>
+                  <Text style={[styles.heroStatLabel, { color: theme.muted }]} numberOfLines={2}>
+                    {t.totalBoxes}
+                  </Text>
+                </View>
+                <View style={[styles.heroStatDivider, { backgroundColor: theme.border }]} />
+                <View style={styles.heroStat}>
+                  <Text style={[styles.heroStatValue, { color: theme.primary }]} numberOfLines={1} adjustsFontSizeToFit>
+                    {Math.round(completionRate)}%
+                  </Text>
+                  <Text style={[styles.heroStatLabel, { color: theme.muted }]} numberOfLines={2}>
+                    {t.targetCoverage}
+                  </Text>
+                </View>
+              </View>
+            </SurfaceCard>
+          </FadeInUp>
+
+          <FadeInUp delay={80}>
+            <SurfaceCard>
+              <Text style={[styles.sectionTitle, { color: theme.text }]}>{t.liveInventory}</Text>
+              {chartData.length === 0 ? (
+                <Text style={[styles.empty, { color: theme.muted }]}>
+                  No commodities configured for this template.
+                </Text>
+              ) : (
+                <View style={styles.metricGrid}>
+                  {chartData.map((item) => (
+                    <MetricTile
+                      key={item.id}
+                      label={item.label}
+                      value={item.value}
+                      unit={item.unit}
+                      tone={item.shortage > 0 ? 'warning' : 'primary'}
+                    />
+                  ))}
+                </View>
+              )}
+            </SurfaceCard>
+          </FadeInUp>
+
+          <FadeInUp delay={140}>
+            <SurfaceCard>
+              <Text style={[styles.sectionTitle, { color: theme.text }]}>{t.inventoryChart}</Text>
+              {chartData.map((item) => (
+                <View key={item.id} style={styles.chartRow}>
+                  <View style={styles.chartHeader}>
+                    <Text style={[styles.chartLabel, { color: theme.text }]}>{item.label}</Text>
+                    <Text style={[styles.chartValue, { color: theme.muted }]}>
+                      {item.value} {item.unit}
+                    </Text>
+                  </View>
+                  <View style={[styles.chartTrack, { backgroundColor: theme.backgroundAlt }]}>
+                    <View
+                      style={[
+                        styles.chartBar,
+                        {
+                          width: `${Math.max((item.value / maxChartValue) * 100, item.value > 0 ? 10 : 0)}%`,
+                          backgroundColor: item.color,
+                        },
+                      ]}
+                    />
+                  </View>
                 </View>
               ))}
-            </View>
-          </Card>
-        )}
+            </SurfaceCard>
+          </FadeInUp>
 
-        {renderAnimatedCard(
-          1,
-          <Card style={styles.card}>
-            <Text style={styles.sectionTitle}>Inventory Chart</Text>
-            {chartData.map((item) => (
-              <View key={item.label} style={styles.chartRow}>
-                <View style={styles.chartHeader}>
-                  <Text style={styles.chartLabel}>{item.label}</Text>
-                  <Text style={styles.chartValue}>
-                    {item.value} {item.unit}
-                  </Text>
-                </View>
-                <View style={styles.chartTrack}>
+          {fefoAlerts.length > 0 ? (
+            <FadeInUp delay={180}>
+              <SurfaceCard>
+                <Text style={[styles.sectionTitle, { color: theme.text }]}>Expiring soon</Text>
+                <Text style={[styles.helper, { color: theme.muted }]}>
+                  First-expiry-first-out (FEFO) preview across this warehouse.
+                </Text>
+                {fefoAlerts.map((alert) => (
                   <View
-                    style={[
-                      styles.chartBar,
-                      {
-                        width: `${Math.max((item.value / maxChartValue) * 100, item.value > 0 ? 10 : 0)}%`,
-                        backgroundColor: item.color
-                      }
-                    ]}
-                  />
+                    key={`${alert.commodity.id}-${alert.boxId}`}
+                    style={[styles.fefoRow, { borderColor: theme.border, backgroundColor: theme.surfaceRaised }]}
+                  >
+                    <View style={[styles.fefoIcon, { backgroundColor: alert.commodity.color || theme.warning }]}>
+                      <MaterialCommunityIcons
+                        name={safeIcon(alert.commodity.icon)}
+                        size={16}
+                        color={theme.primaryText}
+                      />
+                    </View>
+                    <View style={styles.fefoText}>
+                      <Text style={[styles.fefoName, { color: theme.text }]}>
+                        {alert.commodity.name}
+                      </Text>
+                      <Text style={[styles.fefoMeta, { color: theme.muted }]}>
+                        Box {alert.boxId} · expires {alert.expiry}
+                        {alert.batch ? ` · batch ${alert.batch}` : ''}
+                      </Text>
+                    </View>
+                  </View>
+                ))}
+              </SurfaceCard>
+            </FadeInUp>
+          ) : null}
+
+          <FadeInUp delay={200}>
+            <SurfaceCard>
+              <Text style={[styles.sectionTitle, { color: theme.text }]}>{t.boxStatus}</Text>
+              <View style={styles.statusGrid}>
+                {statusRows.map((row) => (
+                  <View
+                    key={row.status}
+                    style={[styles.statusRow, { backgroundColor: theme.surfaceRaised, borderColor: theme.border }]}
+                  >
+                    <StatusBadge status={row.status} size="sm" />
+                    <Text style={[styles.statusCount, { color: theme.text }]}>{row.count}</Text>
+                  </View>
+                ))}
+              </View>
+            </SurfaceCard>
+          </FadeInUp>
+
+          <FadeInUp delay={260}>
+            <SurfaceCard>
+              <Text style={[styles.sectionTitle, { color: theme.text }]}>{t.targetPlanning}</Text>
+              <Text style={[styles.helper, { color: theme.muted }]}>{t.targetHelper}</Text>
+              <ThemedTargetInput
+                value={targetBoxes}
+                onChange={setTargetBoxes}
+                theme={theme}
+                styles={styles}
+              />
+              {chartData.length > 0 ? (
+                <View style={styles.requirementGrid}>
+                  {chartData.map((item) => (
+                    <MetricTile
+                      key={item.id}
+                      label={item.label}
+                      value={item.shortage}
+                      unit={item.unit}
+                      tone={item.shortage > 0 ? 'warning' : 'success'}
+                    />
+                  ))}
                 </View>
-              </View>
-            ))}
-          </Card>
-        )}
+              ) : null}
+            </SurfaceCard>
+          </FadeInUp>
 
-        {renderAnimatedCard(
-          2,
-          <Card style={styles.card}>
-            <Text style={styles.sectionTitle}>Box Status</Text>
-            <View style={styles.statusRow}>
-              <View style={styles.statusPill}>
-                <Text style={styles.statusValue}>{stored}</Text>
-                <Text style={styles.statusLabel}>Stored</Text>
+          <FadeInUp delay={320}>
+            <SurfaceCard>
+              <Text style={[styles.sectionTitle, { color: theme.text }]}>{t.actions}</Text>
+              <View style={styles.actionGrid}>
+                {actionTiles.map((tile) => (
+                  <ActionTile
+                    key={tile.key}
+                    theme={theme}
+                    icon={tile.icon}
+                    label={tile.label}
+                    onPress={tile.onPress}
+                    primary={tile.primary}
+                  />
+                ))}
               </View>
-              <View style={styles.statusPill}>
-                <Text style={styles.statusValue}>{dispatched}</Text>
-                <Text style={styles.statusLabel}>Dispatched</Text>
-              </View>
-              <View style={styles.statusPill}>
-                <Text style={styles.statusValue}>{returned}</Text>
-                <Text style={styles.statusLabel}>Returned</Text>
-              </View>
-            </View>
-          </Card>
-        )}
-
-        {renderAnimatedCard(
-          3,
-          <Card style={styles.card}>
-            <Text style={styles.sectionTitle}>Target Planning</Text>
-            <Text style={styles.helperText}>Set how many standard boxes you want to prepare.</Text>
-            <TextInput
-              mode="outlined"
-              value={String(targetBoxes)}
-              onChangeText={(text) => setTargetBoxes(Number(text) || 0)}
-              keyboardType="numeric"
-              style={styles.input}
-              outlineColor={theme.border}
-              activeOutlineColor={theme.primary}
-              textColor={theme.text}
-              theme={{
-                colors: {
-                  background: theme.surfaceRaised,
-                  placeholder: theme.muted,
-                  primary: theme.primary,
-                  outline: theme.border
-                }
-              }}
-            />
-            <View style={styles.requirementGrid}>
-              <View style={styles.requirementTile}>
-                <Text style={styles.requirementLabel}>Rice Shortage</Text>
-                <Text style={styles.requirementValue}>{shortageRice} kg</Text>
-              </View>
-              <View style={styles.requirementTile}>
-                <Text style={styles.requirementLabel}>Dal Shortage</Text>
-                <Text style={styles.requirementValue}>{shortageDal} kg</Text>
-              </View>
-              <View style={styles.requirementTile}>
-                <Text style={styles.requirementLabel}>Sachet Shortage</Text>
-                <Text style={styles.requirementValue}>{shortageSachets}</Text>
-              </View>
-            </View>
-          </Card>
-        )}
-
-        {renderAnimatedCard(
-          4,
-          <Card style={styles.card}>
-            <Text style={styles.sectionTitle}>Actions</Text>
-            <View style={styles.actionGrid}>
-              <Button mode="contained" buttonColor={theme.primary} textColor={theme.primaryText} onPress={() => navigation.navigate("Boxes")} style={styles.actionButton}>
-                Manage Boxes
-              </Button>
-              <Button mode="outlined" textColor={theme.text} onPress={() => navigation.navigate("ScanQR")} style={styles.actionButton}>
-                Scan QR
-              </Button>
-              <Button mode="outlined" textColor={theme.text} onPress={() => navigation.navigate("AdminInventory")} style={styles.actionButton}>
-                Admin Inventory
-              </Button>
-            </View>
-          </Card>
-        )}
+            </SurfaceCard>
+          </FadeInUp>
+        </View>
       </ScrollView>
     </View>
   );
 }
 
+function ThemedTargetInput({ value, onChange, theme, styles }) {
+  return (
+    <TextInput
+      mode="outlined"
+      value={value}
+      onChangeText={(text) => onChange(text.replace(/[^0-9]/g, ''))}
+      keyboardType="numeric"
+      style={styles.input}
+      outlineColor={theme.border}
+      activeOutlineColor={theme.primary}
+      textColor={theme.text}
+      theme={{
+        colors: {
+          background: theme.surfaceRaised,
+          primary: theme.primary,
+          outline: theme.border,
+          text: theme.text,
+          placeholder: theme.muted,
+        },
+      }}
+    />
+  );
+}
+
+function ActionTile({ theme, icon, label, onPress, primary }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      style={({ pressed }) => [
+        {
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: spacing.md,
+          paddingHorizontal: spacing.lg,
+          paddingVertical: spacing.md,
+          minHeight: 52,
+          borderRadius: radius.md,
+          borderWidth: 1,
+          backgroundColor: primary ? theme.primary : theme.surfaceRaised,
+          borderColor: primary ? theme.primary : theme.border,
+          opacity: pressed ? 0.85 : 1,
+        },
+      ]}
+    >
+      <MaterialCommunityIcons
+        name={icon}
+        size={22}
+        color={primary ? theme.primaryText : theme.primary}
+      />
+      <Text
+        style={[
+          type.bodyStrong,
+          { color: primary ? theme.primaryText : theme.text, flex: 1 },
+        ]}
+      >
+        {label}
+      </Text>
+      <MaterialCommunityIcons
+        name="chevron-right"
+        size={18}
+        color={primary ? theme.primaryText : theme.muted}
+      />
+    </Pressable>
+  );
+}
+
 function createStyles(theme) {
   return StyleSheet.create({
-    screen: {
-      flex: 1,
-      backgroundColor: theme.background
+    screen: { flex: 1, backgroundColor: theme.background },
+    scrollContent: { paddingBottom: spacing.xxl },
+    contentWrap: {
+      width: '100%',
+      maxWidth: layout.maxContentWidth,
+      alignSelf: 'center',
+      paddingHorizontal: spacing.md,
+      paddingTop: spacing.md,
+      paddingBottom: spacing.md,
+      gap: spacing.md,
     },
-    scrollContent: {
-      padding: 18,
-      paddingBottom: 32
-    },
-    glowTop: {
-      position: 'absolute',
-      top: -80,
-      right: -30,
-      width: 220,
-      height: 220,
-      borderRadius: 110,
-      backgroundColor: theme.primary,
-      opacity: theme.mode === 'dark' ? 0.12 : 0.10
-    },
-    glowBottom: {
-      position: 'absolute',
-      bottom: -40,
-      left: -20,
-      width: 180,
-      height: 180,
-      borderRadius: 90,
-      backgroundColor: theme.primary,
-      opacity: theme.mode === 'dark' ? 0.07 : 0.08
-    },
-    heroCard: {
-      backgroundColor: theme.surface,
-      borderRadius: 28,
-      borderWidth: 1,
-      borderColor: theme.border,
-      padding: 22,
-      marginBottom: 18,
-      shadowColor: theme.shadow,
-      shadowOffset: { width: 0, height: 12 },
-      shadowOpacity: theme.mode === 'dark' ? 0.35 : 0.15,
-      shadowRadius: 22,
-      elevation: 8
-    },
-    heroTopRow: {
-      gap: 18
-    },
-    eyebrow: {
-      color: theme.primary,
-      fontSize: 12,
-      letterSpacing: 2,
-      fontWeight: '700',
-      marginBottom: 10
-    },
-    title: {
-      color: theme.text,
-      fontSize: 34,
-      fontWeight: '800',
-      letterSpacing: -1,
-      marginBottom: 8
-    },
-    subtitle: {
-      color: theme.muted,
-      fontSize: 14,
-      lineHeight: 21,
-      maxWidth: 320
-    },
-    heroActions: {
+    heroCard: { marginBottom: 0 },
+    heroActionsRow: {
       flexDirection: 'row',
-      gap: 10,
       flexWrap: 'wrap',
-      marginTop: 6
+      gap: spacing.xs,
+      marginTop: spacing.md,
     },
-    themePill: {
+    heroActions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
+    pill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      paddingHorizontal: spacing.md,
+      paddingVertical: 6,
+      borderRadius: radius.pill,
       backgroundColor: theme.primarySoft,
       borderWidth: 1,
       borderColor: theme.border,
-      borderRadius: 999,
-      paddingHorizontal: 14,
-      paddingVertical: 10
     },
-    themePillText: {
-      color: theme.primary,
-      fontWeight: '700',
-      fontSize: 12
-    },
-    signOutPill: {
-      backgroundColor: theme.surfaceRaised,
+    pillGhost: { backgroundColor: theme.surfaceRaised },
+    pillText: { color: theme.primary, fontWeight: '700', fontSize: 11, letterSpacing: 1, textTransform: 'uppercase' },
+    roleBadge: {
+      alignSelf: 'flex-start',
+      paddingHorizontal: spacing.md,
+      paddingVertical: 4,
+      borderRadius: radius.sm,
       borderWidth: 1,
-      borderColor: theme.border,
-      borderRadius: 999,
-      paddingHorizontal: 14,
-      paddingVertical: 10
+      marginTop: spacing.md,
+      marginBottom: spacing.lg,
     },
-    signOutText: {
-      color: theme.text,
-      fontWeight: '700',
-      fontSize: 12
-    },
+    roleBadgeText: { ...type.caption, fontWeight: '800', letterSpacing: 1.5 },
     heroStats: {
-      marginTop: 22,
       flexDirection: 'row',
-      backgroundColor: theme.surfaceRaised,
-      borderRadius: 20,
+      borderRadius: radius.lg,
       borderWidth: 1,
-      borderColor: theme.border,
-      paddingVertical: 16,
-      paddingHorizontal: 10
+      paddingVertical: spacing.md,
+      paddingHorizontal: spacing.sm,
     },
-    heroStat: {
-      flex: 1,
-      alignItems: 'center'
-    },
-    heroStatDivider: {
-      width: 1,
-      backgroundColor: theme.border
-    },
-    heroStatValue: {
-      color: theme.text,
-      fontSize: 24,
-      fontWeight: '800'
-    },
-    heroStatLabel: {
-      color: theme.muted,
-      fontSize: 12,
-      marginTop: 4
-    },
-    card: {
-      backgroundColor: theme.surface,
-      borderRadius: 24,
-      borderWidth: 1,
-      borderColor: theme.border,
-      padding: 18,
-      marginBottom: 16,
-      shadowColor: theme.shadow,
-      shadowOffset: { width: 0, height: 10 },
-      shadowOpacity: theme.mode === 'dark' ? 0.20 : 0.08,
-      shadowRadius: 18,
-      elevation: 4
-    },
-    sectionTitle: {
-      color: theme.text,
-      fontSize: 18,
-      fontWeight: '800',
-      marginBottom: 14
-    },
-    inventoryGrid: {
+    heroStat: { flex: 1, alignItems: 'center' },
+    heroStatDivider: { width: 1 },
+    heroStatValue: { fontSize: 24, fontWeight: '800', letterSpacing: -0.5 },
+    heroStatLabel: { ...type.caption, marginTop: 2 },
+    sectionTitle: { ...type.subtitle, marginBottom: spacing.md },
+    empty: { ...type.body, paddingVertical: spacing.md },
+    metricGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
+    chartRow: { marginBottom: spacing.md },
+    chartHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: spacing.xs },
+    chartLabel: { ...type.bodyStrong },
+    chartValue: { ...type.caption, fontWeight: '700' },
+    chartTrack: { height: 12, borderRadius: radius.pill, overflow: 'hidden' },
+    chartBar: { height: '100%', borderRadius: radius.pill },
+    fefoRow: {
       flexDirection: 'row',
-      flexWrap: 'wrap',
-      gap: 12
-    },
-    metricTile: {
-      minWidth: '30%',
-      flexGrow: 1,
-      backgroundColor: theme.surfaceRaised,
-      borderRadius: 18,
+      alignItems: 'center',
+      gap: spacing.md,
+      padding: spacing.md,
+      borderRadius: radius.md,
       borderWidth: 1,
-      borderColor: theme.border,
-      padding: 14
+      marginBottom: spacing.xs,
     },
-    metricLabel: {
-      color: theme.muted,
-      fontSize: 12,
-      marginBottom: 6
+    fefoIcon: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
-    metricValue: {
-      color: theme.text,
-      fontSize: 22,
-      fontWeight: '800'
-    },
-    chartRow: {
-      marginBottom: 14
-    },
-    chartHeader: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      marginBottom: 6
-    },
-    chartLabel: {
-      color: theme.text,
-      fontWeight: '700'
-    },
-    chartValue: {
-      color: theme.muted,
-      fontWeight: '600'
-    },
-    chartTrack: {
-      height: 14,
-      backgroundColor: theme.backgroundAlt,
-      borderRadius: 999,
-      overflow: 'hidden'
-    },
-    chartBar: {
-      height: '100%',
-      borderRadius: 999
-    },
+    fefoText: { flex: 1 },
+    fefoName: { ...type.bodyStrong },
+    fefoMeta: { ...type.caption, marginTop: 2 },
+    statusGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
     statusRow: {
-      flexDirection: 'row',
-      gap: 10,
-      flexWrap: 'wrap'
+      flexGrow: 1, minWidth: '30%',
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+      borderRadius: radius.lg, borderWidth: 1, paddingHorizontal: spacing.md, paddingVertical: spacing.md,
     },
-    statusPill: {
-      flexGrow: 1,
-      minWidth: '30%',
-      padding: 14,
-      borderRadius: 18,
-      borderWidth: 1,
-      borderColor: theme.border,
-      backgroundColor: theme.surfaceRaised
-    },
-    statusValue: {
-      color: theme.text,
-      fontSize: 22,
-      fontWeight: '800'
-    },
-    statusLabel: {
-      color: theme.muted,
-      marginTop: 4
-    },
-    helperText: {
-      color: theme.muted,
-      marginBottom: 12,
-      lineHeight: 20
-    },
-    input: {
-      backgroundColor: theme.surfaceRaised,
-      marginBottom: 14
-    },
-    requirementGrid: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      gap: 10
-    },
-    requirementTile: {
-      minWidth: '30%',
-      flexGrow: 1,
-      padding: 14,
-      borderRadius: 18,
-      borderWidth: 1,
-      borderColor: theme.border,
-      backgroundColor: theme.primarySoft
-    },
-    requirementLabel: {
-      color: theme.muted,
-      fontSize: 12,
-      marginBottom: 6
-    },
-    requirementValue: {
-      color: theme.text,
-      fontWeight: '800',
-      fontSize: 18
-    },
-    actionGrid: {
-      gap: 12
-    },
-    actionButton: {
-      borderRadius: 14
-    }
+    statusCount: { fontSize: 22, fontWeight: '800' },
+    helper: { ...type.body, marginBottom: spacing.md },
+    input: { backgroundColor: theme.surfaceRaised, marginBottom: spacing.md },
+    requirementGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
+    actionGrid: { gap: spacing.md },
   });
 }

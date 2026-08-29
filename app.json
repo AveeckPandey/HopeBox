@@ -1,13 +1,12 @@
 {
   "expo": {
-    "name": "inventory-app",
-    "slug": "inventory-app",
+    "name": "HopeBox",
+    "slug": "hopebox",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "inventoryapp",
+    "scheme": "hopebox",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "ios": {
       "supportsTablet": true
     },
@@ -15,12 +14,10 @@
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/icon.png"
-      },
-      "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      }
     },
     "web": {
-      "output": "static",
+      "output": "single",
       "favicon": "./assets/images/icon.png"
     },
     "plugins": [
@@ -39,13 +36,30 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow inventory-app to use your camera to scan box QR codes."
+          "cameraPermission": "Allow HopeBox to use your camera to scan box QR codes."
         }
-      ]
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInPermission": "Allow HopeBox to access your location for tracking box dispatch and return."
+        }
+      ],
+      "expo-font",
+      "expo-sharing",
+      "expo-status-bar"
     ],
     "experiments": {
-      "typedRoutes": true,
-      "reactCompiler": true
+      "reactCompiler": false
+    },
+    "extra": {
+      "firebaseApiKey": "${EXPO_PUBLIC_FIREBASE_API_KEY}",
+      "firebaseAuthDomain": "${EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN}",
+      "firebaseProjectId": "${EXPO_PUBLIC_FIREBASE_PROJECT_ID}",
+      "firebaseStorageBucket": "${EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET}",
+      "firebaseMessagingSenderId": "${EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID}",
+      "firebaseAppId": "${EXPO_PUBLIC_FIREBASE_APP_ID}",
+      "firebaseMeasurementId": "${EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID}"
     }
   }
 }

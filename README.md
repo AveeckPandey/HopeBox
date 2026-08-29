@@ -19,9 +19,9 @@
 
 ## 🌍 What Is This?
 
-A full-stack mobile application built for **NGOs and relief organizations** to manage food aid inventory — tracking rice, dal, and sachets across boxes using QR codes, real-time Firestore updates, and shortage detection.
+A full-stack mobile application built for **NGOs and relief organizations** to manage **any type of aid inventory** — food, medical, therapeutic, hygiene, agricultural — using a **dynamic, admin-configurable commodity catalog**, QR-coded boxes, real-time Firestore sync, and atomic transactions.
 
-No more spreadsheets. No more manual errors. Just scan, dispatch, and go.
+No more spreadsheets. No more hardcoded item lists. Just define your commodities, pack boxes from templates, scan, dispatch, and go.
 
 ---
 
@@ -37,6 +37,18 @@ No more spreadsheets. No more manual errors. Just scan, dispatch, and go.
 ---
 
 ## ✨ Features
+
+### 📋 Dynamic Commodity Catalog (NEW — v2.0)
+- **Admin-configurable commodities** in Firestore (`/commodities`) — no hardcoded item lists
+- **Per-commodity schema**: name, unit (kg/pack/tablet/vial/L/unit), icon, color, category (food/therapeutic/medical/hygiene/agriculture/other), default qty per box, required flag, sort order
+- **Expiry & batch tracking flags** — enforce batchNumber/expiryDate per line when enabled
+- **7 defaults seeded** on first run: Rice, Dal, Sachets, Amoxicillin, RUTF, ORS, Hygiene Kit (stable IDs for template portability)
+- **Soft-delete** preserves audit history; category filters on Admin screen
+
+### 📦 Box Templates (NEW — v2.0)
+- **Reusable box recipes** referencing commodity IDs (e.g., "Standard Food Box", "Medical Kit", "Hygiene Pack")
+- Default template auto-selected; admins create custom templates via Admin screen
+- Templates drive Add/Edit Box UI — only required commodities shown, quantities pre-filled from `defaultPerBox`
 
 ### 🔳 QR-Based Box Tracking
 - Every box gets a **unique QR code** on creation
@@ -55,16 +67,13 @@ Each box moves through three states:
 Inventory is **automatically adjusted** at every state transition.
 
 ### 📊 Real-Time Dashboard
-- Live stock levels: Rice (kg), Dal (kg), Sachets
-- Summary metrics: Possible Boxes, Total Boxes, Target Coverage %
-- Visual inventory bar chart
+- Live stock levels for **all active commodities** (not just 3 fixed items)
+- Summary metrics: Possible Boxes (per template), Total Boxes, Target Coverage %
+- Visual inventory bar chart (dynamic categories)
 - Box status counters (Stored / Dispatched / Returned)
 
 ### 🎯 Target Planning
-Set a box target and instantly see:
-- Rice Shortage (kg)
-- Dal Shortage (kg)
-- Sachet Shortage
+Set a box target for any template and instantly see **per-commodity shortages** (auto-calculated from current stock vs. target × template recipe).
 
 ### 🔐 Admin Inventory Control
 A separate admin panel for manual stock corrections — ensures ground-level accuracy without breaking live tracking.
@@ -77,6 +86,12 @@ All Firestore writes use **atomic transactions** to guarantee:
 
 ### 🌓 Light / Dark Mode
 Toggle between light and dark themes from the dashboard header.
+
+### 🌐 Multi-Language (i18n)
+English + Hindi built-in; extensible via `src/i18n/`.
+
+### 📴 Offline-Aware
+Network status banner + cached reads; graceful degradation when offline.
 
 ---
 
@@ -123,11 +138,13 @@ Toggle between light and dark themes from the dashboard header.
 | Screen | Purpose |
 |--------|---------|
 | **Sign In / Sign Up** | Firebase Auth-based login with password strength indicator |
-| **Dashboard** | Live KPIs, inventory chart, target planning, action buttons |
+| **Dashboard** | Live KPIs for all commodities, inventory chart, target planning (per template), action buttons |
 | **Manage Boxes** | Search, edit, view all boxes with inline QR previews |
 | **QR Scanner** | Camera-based scanning to trigger dispatch/return flows |
-| **Box Details** | View full box contents, update status |
-| **Admin Inventory** | Manually adjust rice, dal, sachet stock |
+| **Box Details** | View full box contents (all commodity lines), update status |
+| **Admin Inventory** | Manually adjust stock for **any commodity** (dynamic list) |
+| **Admin Commodities** | **NEW** — Create/edit/delete commodities, set units, categories, expiry/batch flags, icons, colors |
+| **Admin Templates** | **NEW** — Create/edit box templates referencing commodity IDs with default quantities |
 | **QR Print View** | Full-size printable QR with box metadata |
 
 ---
@@ -179,30 +196,72 @@ EXPO_PUBLIC_FIREBASE_APP_ID=your_app_id
 ## 🗄️ Firestore Data Model
 
 ```
-/boxes/{boxId}
-  ├── rice: number (kg)
-  ├── dal: number (kg)
-  ├── sachets: number
-  ├── status: "stored" | "dispatched" | "returned"
-  └── createdAt: timestamp
+  /commodities/{commodityId}
+    ├── name: string
+    ├── unit: string              // kg, pack, tablet, vial, L, unit...
+    ├── icon: string              // MaterialCommunityIcons name
+    ├── color: string             // hex
+    ├── category: string          // food | therapeutic | medical | hygiene | agriculture | other
+    ├── defaultPerBox: number
+    ├── required: boolean
+    ├── sortOrder: number
+    ├── expiryTracking: boolean   // requires batchNumber + expiryDate per line
+    ├── batchTracking: boolean    // requires batchNumber per line
+    ├── _deleted: boolean         // soft delete
+    └── createdAt, updatedAt: timestamp
 
-/inventory/global
-  ├── rice: number (kg)
-  ├── dal: number (kg)
-  └── sachets: number
+  /config/boxTemplates/{templateId}
+    ├── name: string
+    ├── lines: [{ commodityId, qty, sortOrder }]
+    ├── default: boolean
+    └── _deleted: boolean
+
+  /boxes/{boxId}
+    ├── lines: [{ commodityId, qty, batchNumber?, expiryDate? }]
+    ├── status: "stored" | "dispatched" | "returned"
+    ├── templateId: string?       // which template was used (for analytics)
+    └── createdAt, updatedAt: timestamp
+
+  /inventory/global
+    ├── {commodityId}: number     // dynamic keys — one per active commodity
+    └── updatedAt: timestamp
 ```
 
 ---
 
 ## 🎯 Use Case
 
-Built for NGOs managing **food relief distribution**:
+Built for NGOs managing **multi-category aid distribution**:
 
-- Pack boxes with measured rice, dal, and sachets
+- Define your commodity catalog (food, medical, hygiene, agriculture, etc.)
+- Create box templates (recipes) for different distribution scenarios
+- Pack boxes with measured quantities per template
 - Tag each box with a printed QR code
 - Dispatch boxes to field teams via QR scan
 - Receive returned/unused boxes back into inventory
-- Monitor shortfalls before campaigns launch
+- Monitor per-commodity shortfalls before campaigns launch
+- Track expiry/batch for medical & therapeutic items
+
+---
+
+## 🚀 Major Upgrade from v1 (Hardcoded → Dynamic)
+
+| Area | v1 (Previous) | v2.0 (Current) |
+|------|---------------|----------------|
+| **Commodities** | Hardcoded: Rice, Dal, Sachets only | **Dynamic catalog** in `/commodities` — unlimited items, admin-managed |
+| **Units** | Fixed (kg, pack) | **Any unit**: kg, pack, tablet, vial, L, unit... |
+| **Categories** | None | **6 categories**: food, therapeutic, medical, hygiene, agriculture, other |
+| **Expiry/Batch** | Not supported | **Per-commodity flags** — enforced in Add/Edit Box |
+| **Box Templates** | None | **Reusable recipes** referencing commodity IDs |
+| **Admin UI** | Manual rice/dal/sachet adjust only | **Full Commodities + Templates admin screens** |
+| **Dashboard** | 3 fixed KPIs | **Dynamic KPIs** for all active commodities |
+| **Target Planning** | 3 fixed shortages | **Per-template shortage calc** (any commodity mix) |
+| **Firestore** | Fixed fields per box | **Dynamic lines array** per box + dynamic `/inventory/global` keys |
+| **Architecture** | Single context, dual auth listeners | **Split contexts** (User, Warehouse, Commodities, Language, Network); single auth source |
+| **Theme** | Hardcoded | **Persisted light/dark** + system fallback |
+| **Error Handling** | Basic | **ErrorBoundary + SnackbarHost + PermissionBanner + OfflineBanner** |
+| **Testing** | None | **Jest unit tests** (inventory math, unit conversion, box lines) |
+| **TypeScript** | No | **Full TS + ESLint (Expo config)** |
 
 ---
 

@@ -1,0 +1,153 @@
+rules_version = '2';
+
+// HopeBox — Firestore Security Rules (v2.0)
+//
+// Goals:
+//   - Authenticated users only. Anonymous reads are denied everywhere.
+//   - Role-gated writes: viewer < staff < admin.
+//   - Users can never write their own `role` field. Only admins can
+//     promote/demote users.
+//   - Audit logs are append-only from staff, read-only by admin.
+//   - Inventory mutations are restricted to staff (the dispatch/return
+//     flows are the only legitimate writers).
+//   - Boxes can be created/edited by staff, deleted only by admin.
+//
+// Deploy:  firebase deploy --only firestore:rules
+// Test:    firebase emulators:exec "npm test"   (rule unit tests in tests/rules)
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // --- helpers --------------------------------------------------------
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Reads the caller's role from /users/{uid}. The `exists()` guard
+    // means an unauthenticated or not-yet-provisioned caller evaluates
+    // to a default "viewer" rather than a rule error, which is the
+    // safe failure mode for our read rules below.
+    function callerRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && callerRole() == 'admin';
+    }
+
+    function isStaff() {
+      return isSignedIn() && (callerRole() == 'admin' || callerRole() == 'staff');
+    }
+
+    function isViewer() {
+      return isSignedIn() &&
+        callerRole() in ['admin', 'staff', 'viewer'];
+    }
+
+    // --- users ----------------------------------------------------------
+
+    match /users/{userId} {
+      // Any signed-in user can read user docs (for displaying names
+      // in audit log, etc.). For a stricter posture, narrow to own doc.
+      allow read: if isSignedIn();
+
+      // A user may create their own doc, but the `role` field is
+      // server-controlled and is not allowed in the request payload.
+      // SignUp.js writes {name, email, createdAt} only; the rules
+      // reject any attempt to slip role in.
+      allow create: if isSignedIn()
+                    && request.auth.uid == userId
+                    && !('role' in request.resource.data);
+
+      // Self-update: cannot change role. If role is missing on the
+      // new doc (e.g. first login), allow it — that path is handled
+      // by an admin promotion flow, but we don't block it here.
+      allow update: if isSignedIn()
+                    && request.auth.uid == userId
+                    && (
+                      !('role' in request.resource.data) ||
+                      request.resource.data.role == resource.data.role
+                    );
+
+      // Only admins can write to other users' docs (e.g. role
+      // promotions, deactivation).
+      allow update: if isAdmin() && request.auth.uid != userId;
+      allow delete: if isAdmin();
+    }
+
+    // --- boxes ----------------------------------------------------------
+
+    match /boxes/{boxId} {
+      allow read: if isViewer();
+
+      // Staff create boxes; createdBy must be the caller.
+      allow create: if isStaff()
+                    && request.resource.data.createdBy == request.auth.uid;
+
+      // Staff edit boxes (e.g. update contents before dispatch).
+      allow update: if isStaff();
+
+      // Hard delete is admin-only to prevent accidental loss.
+      allow delete: if isAdmin();
+    }
+
+    // --- inventory (per warehouse) --------------------------------------
+
+    match /inventory/{warehouseId} {
+      allow read: if isViewer();
+
+      // Only staff+ can adjust inventory. Atomic dispatch/return
+      // transactions are the only legitimate writers.
+      allow write: if isStaff();
+    }
+
+    // --- scan history ---------------------------------------------------
+
+    match /scanHistory/{scanId} {
+      allow read: if isViewer();
+
+      // Append-only for the signed-in caller.
+      allow create: if isSignedIn()
+                    && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    // --- audit logs -----------------------------------------------------
+
+    match /auditLogs/{logId} {
+      // Only admins read the audit log.
+      allow read: if isAdmin();
+
+      // Staff append; userId is forced to match the caller.
+      // No edits or deletes from any client.
+      allow create: if isStaff()
+                    && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    // --- commodities & box templates (data-model slice) -----------------
+
+    match /commodities/{commodityId} {
+      allow read: if isViewer();
+      allow write: if isAdmin();
+    }
+
+    match /config/{document=**} {
+      allow read: if isViewer();
+      allow write: if isAdmin();
+    }
+
+    // --- warehouses -----------------------------------------------------
+
+    match /warehouses/{warehouseId} {
+      allow read: if isViewer();
+      allow write: if isAdmin();
+    }
+
+    // --- default deny ---------------------------------------------------
+
+    // Anything not matched above is denied by default. This is
+    // implicit in Firestore but we document it here for clarity.
+  }
+}

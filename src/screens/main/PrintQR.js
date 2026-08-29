@@ -1,50 +1,71 @@
 import { useMemo, useRef, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { ActivityIndicator, Button, Card, IconButton } from 'react-native-paper';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, IconButton } from 'react-native-paper';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { FileSystem } from 'expo-file-system';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
-import * as FileSystem from 'expo-file-system/legacy';
 import QRCode from 'react-native-qrcode-svg';
-import { useAppTheme } from '../../theme/AppThemeContext';
 
-export default function PrintQR({ route }) {
+import { useAppTheme } from '../../theme/AppThemeContext';
+import { useCommodities } from '../../contexts/CommoditiesContext';
+import { useLanguage } from '../../contexts/LanguageContext';
+import { snackbar } from '../../hooks/useSnackbar';
+import { lineQty } from '../../services/boxLines';
+import { logger } from '../../services/logger';
+
+import ScreenHeader from '../../components/ScreenHeader';
+import SurfaceCard from '../../components/SurfaceCard';
+import MetricTile from '../../components/MetricTile';
+import EmptyState from '../../components/EmptyState';
+import FadeInUp from '../../components/FadeInUp';
+import AmbientGlow from '../../components/AmbientGlow';
+import { layout, radius, spacing, type } from '../../theme/tokens';
+import { buildPrintLabelHtml } from '../../templates/printLabel';
+
+export default function PrintQR({ route, navigation }) {
   const { theme } = useAppTheme();
-  const { item } = route.params;
+  const { commodities, byId } = useCommodities();
+  const { t: tAll } = useLanguage();
+  const t = tAll('print');
   const [isSaving, setIsSaving] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
   const qrRef = useRef(null);
   const styles = useMemo(() => createStyles(theme), [theme]);
 
-  const getQrFileUri = () =>
-    `${FileSystem.documentDirectory}qr-${item.id}.png`;
+  // Defensive guard for missing `item` param. Lives after all
+  // hook calls so the rules of hooks are satisfied.
+  const item = route?.params?.item;
+  if (!item) {
+    return (
+      <View style={{ flex: 1, backgroundColor: theme.background }}>
+        <EmptyState
+          icon="qrcode"
+          title="No box to print"
+          message="Pick a box from the registry to print its QR label."
+          actionLabel="Back to boxes"
+          onAction={() => navigation.goBack()}
+        />
+      </View>
+    );
+  }
 
-  const getQrDataUrl = async () =>
-    await new Promise((resolve, reject) => {
-      if (!qrRef.current) {
-        reject(new Error('QR ref not ready'));
-        return;
-      }
+  const getQrFileUri = () => `${FileSystem.documentDirectory}qr-${item.id}.png`;
 
+  const getQrDataUrl = () =>
+    new Promise((resolve, reject) => {
+      if (!qrRef.current) { reject(new Error('QR ref not ready')); return; }
       qrRef.current.toDataURL((base64) => {
-        if (!base64) {
-          reject(new Error('QR export failed'));
-          return;
-        }
-
+        if (!base64) { reject(new Error('QR export failed')); return; }
         resolve(`data:image/png;base64,${base64}`);
       });
     });
 
   const saveQrFile = async () => {
     const qrDataUrl = await getQrDataUrl();
-
     const base64Data = qrDataUrl.replace(/^data:image\/png;base64,/, '');
     const fileUri = getQrFileUri();
-
-    await FileSystem.writeAsStringAsync(fileUri, base64Data, {
-      encoding: FileSystem.EncodingType.Base64
-    });
-
+    await FileSystem.writeAsStringAsync(fileUri, base64Data, { encoding: FileSystem.EncodingType.Base64 });
     return { fileUri, qrDataUrl };
   };
 
@@ -53,24 +74,13 @@ export default function PrintQR({ route }) {
       setIsSaving(true);
       const { fileUri } = await saveQrFile();
       const canShare = await Sharing.isAvailableAsync();
-
       if (canShare) {
-        await Sharing.shareAsync(fileUri, {
-          dialogTitle: 'Save or share QR image',
-          mimeType: 'image/png',
-          UTI: 'public.png'
-        });
+        await Sharing.shareAsync(fileUri, { dialogTitle: 'Save or share QR image', mimeType: 'image/png', UTI: 'public.png' });
       }
-
-      Alert.alert(
-        'QR saved',
-        canShare
-          ? 'The QR image is ready in the share sheet so you can download or send it.'
-          : `The QR image was saved to:\n${fileUri}`
-      );
+      snackbar.success(canShare ? t.saved : `${t.saved}: ${fileUri}`);
     } catch (err) {
-      console.log('QR save error:', err);
-      Alert.alert('Save failed', 'Could not save the QR image.');
+      logger.logError('PrintQR/save', err, { boxId: item?.id });
+      snackbar.error(t.saveFailed);
     } finally {
       setIsSaving(false);
     }
@@ -80,208 +90,157 @@ export default function PrintQR({ route }) {
     try {
       setIsPrinting(true);
       const { qrDataUrl } = await saveQrFile();
-      const html = `
-        <html>
-          <body style="font-family: Arial, sans-serif; padding: 24px; color: #111827;">
-            <div style="max-width: 360px; margin: 0 auto; border: 2px solid #1F2937; border-radius: 18px; padding: 24px; text-align: center;">
-              <div style="font-size: 12px; letter-spacing: 3px; font-weight: 700; color: #6B7280; margin-bottom: 10px;">QR LABEL</div>
-              <div style="font-size: 28px; font-weight: 800; margin-bottom: 18px;">Box ${item.id}</div>
-              <img src="${qrDataUrl}" style="width: 220px; height: 220px; margin-bottom: 18px;" />
-              <div style="font-size: 16px; line-height: 1.8; text-align: left;">
-                <div><strong>Rice:</strong> ${item.rice}</div>
-                <div><strong>Dal:</strong> ${item.dal}</div>
-                <div><strong>Sachets:</strong> ${item.sachets}</div>
-              </div>
-            </div>
-          </body>
-        </html>
-      `;
-
+      const html = buildPrintLabelHtml(item, qrDataUrl, byId);
       await Print.printAsync({ html });
     } catch (err) {
-      console.log('QR print error:', err);
-      Alert.alert('Print failed', 'Could not open the print dialog.');
+      logger.logError('PrintQR/print', err, { boxId: item?.id });
+      snackbar.error(t.printFailed);
     } finally {
       setIsPrinting(false);
     }
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.screen}>
-      <Card style={styles.card}>
-        <View style={styles.headerRow}>
-          <View style={styles.headerTextWrap}>
-            <Text style={styles.eyebrow}>QR EXPORT</Text>
-            <Text style={styles.title}>Printable QR Card</Text>
-            <Text style={styles.subtitle}>
-              Save the QR image to your device or open the native print dialog for a clean label.
-            </Text>
-          </View>
-
-          <IconButton
-            icon="download"
-            mode="contained"
-            size={22}
-            iconColor={theme.primaryText}
-            containerColor={theme.primary}
-            onPress={handleDownload}
-            disabled={isSaving}
-          />
-        </View>
-
-        <View style={styles.qrPanel}>
-          <View style={styles.qrFrame}>
-            <QRCode
-              getRef={(ref) => {
-                qrRef.current = ref;
-              }}
-              value={item.id}
-              size={220}
-              color={theme.text}
-              backgroundColor={theme.surfaceRaised}
+    <View style={styles.screen}>
+      <AmbientGlow variant="topLeft" opacity={0.5} />
+      <ScrollView contentContainerStyle={styles.scroll}>
+        <View style={styles.contentWrap}>
+          <FadeInUp delay={0}>
+            <ScreenHeader
+              eyebrow={t.eyebrow}
+              title={t.title}
+              subtitle={t.subtitle}
+              right={
+                <IconButton
+                  icon="download"
+                  mode="contained"
+                  size={22}
+                  iconColor={theme.primaryText}
+                  containerColor={theme.primary}
+                  accessibilityLabel={t.download}
+                  onPress={handleDownload}
+                  disabled={isSaving}
+                />
+              }
             />
-          </View>
-          {(isSaving || isPrinting) ? (
-            <ActivityIndicator color={theme.primary} size="small" style={styles.loader} />
-          ) : null}
-        </View>
+          </FadeInUp>
 
-        <View style={styles.actionsRow}>
-          <Button
-            mode="contained"
-            icon="download"
-            buttonColor={theme.primary}
-            textColor={theme.primaryText}
-            onPress={handleDownload}
-            disabled={isSaving}
-            style={styles.actionButton}
-          >
-            {isSaving ? 'Saving...' : 'Download QR'}
-          </Button>
-          <Button
-            mode="outlined"
-            icon="printer"
-            textColor={theme.text}
-            onPress={handlePrint}
-            disabled={isPrinting}
-            style={styles.actionButton}
-          >
-            {isPrinting ? 'Opening...' : 'Print QR'}
-          </Button>
-        </View>
+          <FadeInUp delay={80}>
+            <SurfaceCard>
+              <View style={[styles.qrPanel, { backgroundColor: theme.surfaceRaised, borderColor: theme.border }]}>
+                <View style={styles.qrFrame}>
+                  <QRCode
+                    getRef={(ref) => { qrRef.current = ref; }}
+                    value={item.id}
+                    size={220}
+                    color="#000000"
+                    backgroundColor={theme.surfaceRaised}
+                  />
+                </View>
+                {(isSaving || isPrinting) ? (
+                  <ActivityIndicator color={theme.primary} size="small" style={styles.loader} />
+                ) : null}
+              </View>
 
-        <View style={styles.detailsGrid}>
-          <View style={styles.detailTile}>
-            <Text style={styles.detailLabel}>Box ID</Text>
-            <Text style={styles.detailValue}>{item.id}</Text>
-          </View>
-          <View style={styles.detailTile}>
-            <Text style={styles.detailLabel}>Rice</Text>
-            <Text style={styles.detailValue}>{item.rice}</Text>
-          </View>
-          <View style={styles.detailTile}>
-            <Text style={styles.detailLabel}>Dal</Text>
-            <Text style={styles.detailValue}>{item.dal}</Text>
-          </View>
-          <View style={styles.detailTile}>
-            <Text style={styles.detailLabel}>Sachets</Text>
-            <Text style={styles.detailValue}>{item.sachets}</Text>
-          </View>
+              <View style={styles.actionsRow}>
+                <Pressable
+                  onPress={handleDownload}
+                  disabled={isSaving}
+                  accessibilityRole="button"
+                  accessibilityLabel={t.download}
+                  style={({ pressed }) => [
+                    styles.primaryButton,
+                    { backgroundColor: theme.primary, opacity: isSaving ? 0.6 : pressed ? 0.85 : 1 },
+                  ]}
+                >
+                  <MaterialCommunityIcons name="download" size={18} color={theme.primaryText} />
+                  <Text style={[styles.primaryButtonText, { color: theme.primaryText }]}>
+                    {isSaving ? t.saving : t.download}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  onPress={handlePrint}
+                  disabled={isPrinting}
+                  accessibilityRole="button"
+                  accessibilityLabel={t.print}
+                  style={({ pressed }) => [
+                    styles.secondaryButton,
+                    { borderColor: theme.border, opacity: isPrinting ? 0.6 : pressed ? 0.85 : 1 },
+                  ]}
+                >
+                  <MaterialCommunityIcons name="printer-outline" size={18} color={theme.text} />
+                  <Text style={[styles.secondaryButtonText, { color: theme.text }]}>
+                    {isPrinting ? t.opening : t.print}
+                  </Text>
+                </Pressable>
+              </View>
+
+              <View style={styles.detailGrid}>
+                <MetricTile label="Box ID" value={item.id} numberOfLines={2} />
+                {commodities.map((c) => {
+                  const v =
+                    item.contents && item.contents[c.id] != null
+                      ? lineQty(item.contents[c.id])
+                      : item[c.id];
+                  if (!v) return null;
+                  return <MetricTile key={c.id} label={c.name} value={v} unit={c.unit} />;
+                })}
+                {item.category ? <MetricTile label="Category" value={item.category} /> : null}
+                {item.donorName ? <MetricTile label="Donor" value={item.donorName} /> : null}
+              </View>
+            </SurfaceCard>
+          </FadeInUp>
         </View>
-      </Card>
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
 function createStyles(theme) {
   return StyleSheet.create({
-    screen: {
-      flexGrow: 1,
-      justifyContent: 'center',
-      backgroundColor: theme.background,
-      padding: 18
-    },
-    card: {
-      backgroundColor: theme.surface,
-      borderRadius: 24,
-      borderWidth: 1,
-      borderColor: theme.border,
-      padding: 20
-    },
-    headerRow: {
-      flexDirection: 'row',
-      alignItems: 'flex-start',
-      justifyContent: 'space-between',
-      gap: 12
-    },
-    headerTextWrap: {
-      flex: 1
-    },
-    eyebrow: {
-      color: theme.primary,
-      fontSize: 12,
-      fontWeight: '700',
-      letterSpacing: 2,
-      marginBottom: 10
-    },
-    title: {
-      color: theme.text,
-      fontSize: 28,
-      fontWeight: '800',
-      marginBottom: 8
-    },
-    subtitle: {
-      color: theme.muted,
-      marginBottom: 18,
-      lineHeight: 20
+    screen: { flex: 1, backgroundColor: theme.background },
+    scroll: { paddingBottom: spacing.xxl, paddingTop: spacing.lg },
+    contentWrap: {
+      width: '100%',
+      maxWidth: layout.maxContentWidth,
+      alignSelf: 'center',
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.md,
+      gap: spacing.lg,
     },
     qrPanel: {
-      backgroundColor: theme.surfaceRaised,
+      borderRadius: radius.lg,
       borderWidth: 1,
-      borderColor: theme.border,
-      borderRadius: 24,
-      padding: 18,
+      padding: spacing.lg,
       alignItems: 'center',
       justifyContent: 'center',
       minHeight: 260,
-      marginBottom: 18
+      marginBottom: spacing.lg,
     },
-    qrFrame: {
-      borderRadius: 12,
-      overflow: 'hidden'
-    },
-    loader: {
-      marginTop: 12
-    },
-    actionsRow: {
-      gap: 12,
-      marginBottom: 18
-    },
-    actionButton: {
-      borderRadius: 14
-    },
-    detailsGrid: {
+    qrFrame: { borderRadius: radius.md, overflow: 'hidden' },
+    loader: { marginTop: spacing.md },
+    actionsRow: { gap: spacing.md, marginBottom: spacing.lg },
+    primaryButton: {
       flexDirection: 'row',
-      flexWrap: 'wrap',
-      gap: 10
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.sm,
+      paddingVertical: spacing.md,
+      borderRadius: radius.md,
+      minHeight: 52,
     },
-    detailTile: {
-      minWidth: '45%',
-      flexGrow: 1,
-      backgroundColor: theme.surfaceRaised,
+    primaryButtonText: { ...type.bodyStrong, textTransform: 'uppercase', letterSpacing: 1.5 },
+    secondaryButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.sm,
+      paddingVertical: spacing.md,
+      borderRadius: radius.md,
       borderWidth: 1,
-      borderColor: theme.border,
-      borderRadius: 18,
-      padding: 14
+      minHeight: 52,
     },
-    detailLabel: {
-      color: theme.muted,
-      fontSize: 12,
-      marginBottom: 4
-    },
-    detailValue: {
-      color: theme.text,
-      fontWeight: '800'
-    }
+    secondaryButtonText: { ...type.bodyStrong, textTransform: 'uppercase', letterSpacing: 1.5 },
+    detailGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
   });
 }

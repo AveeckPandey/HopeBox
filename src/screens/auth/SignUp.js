@@ -1,389 +1,304 @@
-import { View, Text, StyleSheet, TouchableOpacity, KeyboardAvoidingView, Platform, Animated, ScrollView } from 'react-native';
-import { TextInput, ActivityIndicator } from 'react-native-paper';
-import { useState, useRef, useEffect } from 'react';
-import { createUserWithEmailAndPassword } from "firebase/auth";
-import { auth } from "../../services/firebase";
+import { useState } from 'react';
+import {
+  Keyboard,
+  KeyboardAvoidingView,
+  Linking,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput as RNTextInput,
+  View,
+} from 'react-native';
+import { ActivityIndicator } from 'react-native-paper';
+import { createUserWithEmailAndPassword } from 'firebase/auth';
+import { doc, setDoc } from 'firebase/firestore';
+import * as Haptics from 'expo-haptics';
 
-const COLORS = {
-  bg: '#0F0F0F',
-  surface: '#1A1A1A',
-  border: '#2A2A2A',
-  gold: '#C9A84C',
-  goldLight: '#E8C97A',
-  text: '#F0EDE6',
-  muted: '#7A7670',
-  error: '#E07070',
-  inputBg: '#161616',
-};
+import { auth, db } from '../../services/firebase';
+import { logger } from '../../services/logger';
+import { useAppTheme } from '../../theme/AppThemeContext';
+import { useLanguage } from '../../contexts/LanguageContext';
+import { snackbar } from '../../hooks/useSnackbar';
+
+import AmbientGlow from '../../components/AmbientGlow';
+import FadeInUp from '../../components/FadeInUp';
+import { layout, radius, spacing, type } from '../../theme/tokens';
 
 export default function SignUp({ navigation }) {
+  const { theme } = useAppTheme();
+  const { t: tAll, language } = useLanguage();
+  const t = tAll('auth');
+  const tApp = tAll('app');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [focusedField, setFocusedField] = useState(null);
-
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(32)).current;
-
-  useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, { toValue: 1, duration: 700, useNativeDriver: true }),
-      Animated.timing(slideAnim, { toValue: 0, duration: 600, useNativeDriver: true }),
-    ]).start();
-  }, []);
+  // The screen-level fade/slide is handled by the single FadeInUp
+  // wrapper below. The previous implementation nested RN's
+  // `Animated.View` outside a Reanimated `FadeInUp`, which left the
+  // inner content invisible when the worklet runtime and RN Animated
+  // competed for the same node. One FadeInUp = one animation system.
+  // `language` is read so the component re-renders on locale change.
+  void language;
 
   const validate = () => {
-    if (!name.trim()) return "Full name is required";
-    if (!email.includes('@')) return "Enter a valid email address";
-    if (password.length < 6) return "Password must be at least 6 characters";
+    if (!name.trim()) return t.errors.nameRequired;
+    if (!email.includes('@')) return t.errors.emailInvalid;
+    if (password.length < 8) return t.errors.passwordShort;
     return null;
+  };
+
+  // P10: Terms-of-Service and Privacy-Policy links. The strings
+  // `https://example.com/terms` and `/privacy` are placeholders
+  // the org must replace with their real URLs. If the URL can't
+  // be opened (no browser, broken config), we surface a warning
+  // haptic so the user knows the tap did something.
+  const openExternalLink = async (url) => {
+    try {
+      await Linking.openURL(url);
+    } catch (_err) {
+      logger.logWarning('auth/SignUp', 'openExternalLink failed', { url });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    }
   };
 
   const handleSignUp = async () => {
     const validationError = validate();
-    if (validationError) { setError(validationError); return; }
+    if (validationError) {
+      setError(validationError);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      return;
+    }
+    setError('');
+    setLoading(true);
     try {
-      setLoading(true);
-      setError('');
-      await createUserWithEmailAndPassword(auth, email, password);
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      // The `role` field is intentionally NOT written here.
+      // Firestore security rules (firestore.rules) deny any client
+      // write that includes `role` on /users/{uid}. An admin must
+      // promote the user via the admin flow. Until then the user is
+      // a `viewer` (read-only). This prevents a self-signup from
+      // granting itself `staff` or `admin` privileges.
+      await setDoc(doc(db, 'users', userCredential.user.uid), {
+        name: name.trim(),
+        email: email.toLowerCase(),
+        createdAt: new Date().toISOString(),
+      }, { merge: true });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      snackbar.success(`Welcome to ${tApp.name}`);
     } catch (err) {
-      setError("Account already exists or invalid data");
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      logger.logError('auth/SignUp', err);
+      if (err.code === 'auth/email-already-in-use') setError(t.errors.emailInUse);
+      else if (err.code === 'auth/invalid-email') setError(t.errors.invalidEmail);
+      else if (err.code === 'auth/weak-password') setError(t.errors.weakPassword);
+      else setError(err.message || t.errors.accountFailed);
     } finally {
       setLoading(false);
     }
   };
 
   const inputField = (label, value, onChange, field, extra = {}) => (
-    <View style={[styles.inputWrapper, focusedField === field && styles.inputWrapperFocused]}>
-      <Text style={styles.inputLabel}>{label}</Text>
-      <TextInput
+    <View
+      style={[
+        styles.inputWrapper,
+        focusedField === field && styles.inputWrapperFocused,
+        { backgroundColor: theme.surfaceRaised, borderColor: focusedField === field ? theme.primary : theme.border },
+      ]}
+    >
+      <Text style={[styles.inputLabel, { color: theme.primary }]}>{label}</Text>
+      <RNTextInput
         value={value}
         onChangeText={onChange}
         onFocus={() => setFocusedField(field)}
         onBlur={() => setFocusedField(null)}
-        style={styles.input}
-        underlineColor="transparent"
-        activeUnderlineColor="transparent"
-        textColor={COLORS.text}
-        theme={{ colors: { background: 'transparent' } }}
-        placeholderTextColor={COLORS.muted}
+        style={[styles.input, { color: theme.text }]}
+        placeholderTextColor={theme.muted}
+        accessibilityLabel={label}
         {...extra}
       />
     </View>
   );
+
+  const styles = createStyles(theme);
 
   return (
     <KeyboardAvoidingView
       style={styles.root}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      {/* Ambient glow blobs */}
-      <View style={styles.glowTop} />
-      <View style={styles.glowRight} />
+      <AmbientGlow variant="top" opacity={0.8} />
+      <AmbientGlow variant="bottomRight" opacity={0.6} />
 
+      <Pressable
+        style={styles.dismissLayer}
+        onPress={() => Keyboard.dismiss()}
+        accessible={false}
+      >
       <ScrollView
         contentContainerStyle={styles.scroll}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <Animated.View style={[styles.container, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
-
-          {/* Brand mark */}
+        <FadeInUp delay={0} duration={420} distance={20}>
           <View style={styles.brandMark}>
-            <View style={styles.brandSquare} />
-            <View style={styles.brandSquareInner} />
+            <View style={[styles.brandSquare, { borderColor: theme.primary }]} />
+            <View style={[styles.brandSquareInner, { backgroundColor: theme.primary }]} />
           </View>
 
-          {/* Heading */}
-          <Text style={styles.heading}>Create{'\n'}Account</Text>
-          <Text style={styles.subheading}>Join us today</Text>
+          <Text style={styles.heading}>{t.createHeading}</Text>
+          <Text style={styles.subheading}>{t.createSub}</Text>
 
-          {/* Step indicator */}
           <View style={styles.stepRow}>
-            <View style={styles.dividerLine} />
-            <View style={styles.stepBadge}>
-              <Text style={styles.stepText}>NEW</Text>
+            <View style={[styles.dividerLine, { backgroundColor: theme.border }]} />
+            <View style={[styles.stepBadge, { borderColor: theme.primary }]}>
+              <Text style={[styles.stepText, { color: theme.primary }]}>NEW</Text>
             </View>
-            <View style={styles.dividerLine} />
+            <View style={[styles.dividerLine, { backgroundColor: theme.border }]} />
           </View>
 
-          {/* Form */}
-          <View style={styles.form}>
-            {inputField('FULL NAME', name, setName, 'name', {
-              placeholder: 'Your name',
-              autoCapitalize: 'words',
-            })}
-            {inputField('EMAIL', email, setEmail, 'email', {
-              placeholder: 'you@example.com',
-              keyboardType: 'email-address',
-              autoCapitalize: 'none',
-            })}
-            {inputField('PASSWORD', password, setPassword, 'password', {
-              placeholder: '••••••••',
-              secureTextEntry: true,
-            })}
+          <View>
+            {inputField(t.fullName, name, setName, 'name', { placeholder: t.namePlaceholder, autoCapitalize: 'words' })}
+            {inputField(t.email, email, setEmail, 'email', { placeholder: t.emailPlaceholder, keyboardType: 'email-address', autoCapitalize: 'none' })}
+            {inputField(t.password, password, setPassword, 'password', { placeholder: t.passwordPlaceholder, secureTextEntry: true })}
+          </View>
 
-            {/* Password strength hint */}
-            <View style={styles.strengthRow}>
-              {[1, 2, 3, 4].map(i => (
-                <View
-                  key={i}
-                  style={[
-                    styles.strengthBar,
-                    password.length >= i * 2 && styles.strengthBarActive,
-                  ]}
-                />
-              ))}
-              <Text style={styles.strengthLabel}>
-                {password.length === 0 ? 'Min. 6 characters' :
-                  password.length < 4 ? 'Too short' :
-                  password.length < 8 ? 'Fair' : 'Strong'}
-              </Text>
+          <View style={styles.strengthRow}>
+            {[1, 2, 3, 4].map((i) => (
+              <View
+                key={i}
+                style={[
+                  styles.strengthBar,
+                  { backgroundColor: password.length >= i * 2 ? theme.primary : theme.border },
+                ]}
+              />
+            ))}
+            <Text style={[styles.strengthLabel, { color: theme.muted }]}>
+              {password.length === 0 ? t.strengthLabels.empty :
+                password.length < 6 ? t.strengthLabels.tooShort :
+                password.length < 10 ? t.strengthLabels.fair : t.strengthLabels.strong}
+            </Text>
+          </View>
+
+          {error ? (
+            <View
+              style={[styles.errorBox, { backgroundColor: theme.dangerSoft, borderLeftColor: theme.danger }]}
+              accessibilityLiveRegion="polite"
+            >
+              <Text style={[styles.errorText, { color: theme.danger }]}>{error}</Text>
             </View>
+          ) : null}
 
-            {error ? (
-              <View style={styles.errorBox}>
-                <Text style={styles.errorText}>{error}</Text>
-              </View>
-            ) : null}
-
-            <TouchableOpacity
-              style={[styles.button, loading && styles.buttonDisabled]}
+          <View>
+            <Pressable
               onPress={handleSignUp}
               disabled={loading}
-              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel={t.signUp}
+              style={({ pressed }) => [
+                styles.button,
+                { backgroundColor: theme.primary, opacity: loading ? 0.6 : pressed ? 0.85 : 1 },
+              ]}
             >
-              {loading
-                ? <ActivityIndicator color={COLORS.bg} size={20} />
-                : <Text style={styles.buttonText}>Create Account</Text>
-              }
-            </TouchableOpacity>
+              {loading ? (
+                <ActivityIndicator color={theme.primaryText} size={20} />
+              ) : (
+                <Text style={[styles.buttonText, { color: theme.primaryText }]}>{t.signUp}</Text>
+              )}
+            </Pressable>
 
-            <Text style={styles.terms}>
-              By signing up you agree to our{' '}
-              <Text style={styles.termsLink}>Terms of Service</Text>
-              {' '}and{' '}
-              <Text style={styles.termsLink}>Privacy Policy</Text>
+            <Text style={[styles.terms, { color: theme.muted }]}>
+              {t.termsPrefix}
+              <Text
+                style={[styles.termsLink, { color: theme.primary }]}
+                onPress={() => openExternalLink('https://example.com/terms')}
+                accessibilityRole="link"
+                accessibilityLabel={t.termsOfService}
+                suppressHighlighting={false}
+              >
+                {t.termsOfService}
+              </Text>
+              {t.termsSuffix}
+              <Text
+                style={[styles.termsLink, { color: theme.primary }]}
+                onPress={() => openExternalLink('https://example.com/privacy')}
+                accessibilityRole="link"
+                accessibilityLabel={t.privacyPolicy}
+                suppressHighlighting={false}
+              >
+                {t.privacyPolicy}
+              </Text>
             </Text>
 
             <View style={styles.footer}>
-              <Text style={styles.footerText}>Already have an account? </Text>
-              <TouchableOpacity onPress={() => navigation.navigate('SignIn')}>
-                <Text style={styles.footerLink}>Sign In</Text>
-              </TouchableOpacity>
+              <Text style={[styles.footerText, { color: theme.muted }]}>{t.haveAccount} </Text>
+              <Pressable
+                onPress={() => navigation.navigate('SignIn')}
+                accessibilityRole="button"
+                accessibilityLabel={t.signIn}
+              >
+                <Text style={[styles.footerLink, { color: theme.primary }]}>{t.signIn}</Text>
+              </Pressable>
             </View>
           </View>
-
-        </Animated.View>
+        </FadeInUp>
       </ScrollView>
+      </Pressable>
     </KeyboardAvoidingView>
   );
 }
 
-const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: COLORS.bg,
-  },
-  scroll: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    paddingVertical: 40,
-  },
-  glowTop: {
-    position: 'absolute',
-    top: -60,
-    right: '15%',
-    width: 240,
-    height: 240,
-    borderRadius: 120,
-    backgroundColor: COLORS.gold,
-    opacity: 0.06,
-  },
-  glowRight: {
-    position: 'absolute',
-    bottom: 60,
-    left: -60,
-    width: 180,
-    height: 180,
-    borderRadius: 90,
-    backgroundColor: COLORS.gold,
-    opacity: 0.04,
-  },
-  container: {
-    paddingHorizontal: 28,
-  },
-  brandMark: {
-    alignItems: 'flex-start',
-    marginBottom: 32,
-    position: 'relative',
-    width: 24,
-    height: 24,
-  },
-  brandSquare: {
-    position: 'absolute',
-    width: 18,
-    height: 18,
-    borderWidth: 2,
-    borderColor: COLORS.gold,
-    borderRadius: 3,
-  },
-  brandSquareInner: {
-    position: 'absolute',
-    top: 6,
-    left: 6,
-    width: 10,
-    height: 10,
-    backgroundColor: COLORS.gold,
-    borderRadius: 2,
-  },
-  heading: {
-    fontSize: 44,
-    fontWeight: '700',
-    color: COLORS.text,
-    letterSpacing: -1,
-    lineHeight: 50,
-    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
-  },
-  subheading: {
-    fontSize: 14,
-    color: COLORS.muted,
-    marginTop: 8,
-    letterSpacing: 1.5,
-    textTransform: 'uppercase',
-  },
-  stepRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: 28,
-    gap: 10,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: COLORS.border,
-  },
-  stepBadge: {
-    borderWidth: 1,
-    borderColor: COLORS.gold,
-    borderRadius: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
-  stepText: {
-    color: COLORS.gold,
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 2,
-  },
-  form: {
-    gap: 14,
-  },
-  inputWrapper: {
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 12,
-    backgroundColor: COLORS.inputBg,
-    paddingHorizontal: 16,
-    paddingTop: 10,
-    paddingBottom: 4,
-  },
-  inputWrapperFocused: {
-    borderColor: COLORS.gold,
-  },
-  inputLabel: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: COLORS.gold,
-    letterSpacing: 2,
-    marginBottom: 2,
-  },
-  input: {
-    backgroundColor: 'transparent',
-    fontSize: 15,
-    paddingHorizontal: 0,
-    height: 40,
-  },
-  strengthRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: -4,
-  },
-  strengthBar: {
-    flex: 1,
-    height: 3,
-    borderRadius: 2,
-    backgroundColor: COLORS.border,
-  },
-  strengthBarActive: {
-    backgroundColor: COLORS.gold,
-  },
-  strengthLabel: {
-    color: COLORS.muted,
-    fontSize: 11,
-    marginLeft: 4,
-    minWidth: 80,
-  },
-  errorBox: {
-    backgroundColor: 'rgba(224,112,112,0.08)',
-    borderRadius: 8,
-    borderLeftWidth: 3,
-    borderLeftColor: COLORS.error,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  errorText: {
-    color: COLORS.error,
-    fontSize: 13,
-  },
-  button: {
-    backgroundColor: COLORS.gold,
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: 'center',
-    marginTop: 4,
-    shadowColor: COLORS.gold,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 6,
-  },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  buttonText: {
-    color: COLORS.bg,
-    fontSize: 15,
-    fontWeight: '700',
-    letterSpacing: 1.5,
-    textTransform: 'uppercase',
-  },
-  terms: {
-    color: COLORS.muted,
-    fontSize: 12,
-    textAlign: 'center',
-    lineHeight: 18,
-    marginTop: 4,
-  },
-  termsLink: {
-    color: COLORS.goldLight,
-  },
-  footer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginTop: 4,
-    paddingBottom: 8,
-  },
-  footerText: {
-    color: COLORS.muted,
-    fontSize: 14,
-  },
-  footerLink: {
-    color: COLORS.goldLight,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-});
+function createStyles(theme) {
+  return StyleSheet.create({
+    root: { flex: 1, backgroundColor: theme.background },
+    // P28: tap-to-dismiss keyboard layer (see SignIn for the
+    // rationale).
+    dismissLayer: { flex: 1 },
+    scroll: { flexGrow: 1, justifyContent: 'center', paddingVertical: spacing.xxl, paddingTop: spacing.xxl + 24 },
+    container: {
+      width: '100%',
+      maxWidth: layout.maxContentWidth,
+      alignSelf: 'center',
+      paddingHorizontal: spacing.xl,
+    },
+    brandMark: { alignItems: 'flex-start', marginBottom: spacing.xl, position: 'relative', width: 24, height: 24 },
+    brandSquare: { position: 'absolute', width: 18, height: 18, borderWidth: 2, borderRadius: 3 },
+    brandSquareInner: { position: 'absolute', top: 6, left: 6, width: 10, height: 10, borderRadius: 2 },
+    heading: {
+      fontSize: 44, fontWeight: '700', color: theme.text, letterSpacing: -1, lineHeight: 50,
+      fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+    },
+    subheading: { ...type.eyebrow, fontSize: 13, color: theme.muted, marginTop: spacing.sm, letterSpacing: 1.5 },
+    stepRow: { flexDirection: 'row', alignItems: 'center', marginVertical: spacing.xl, gap: spacing.sm },
+    dividerLine: { flex: 1, height: 1 },
+    stepBadge: { borderWidth: 1, borderRadius: 4, paddingHorizontal: spacing.sm, paddingVertical: 3 },
+    stepText: { ...type.eyebrow, fontSize: 10 },
+    inputWrapper: {
+      borderWidth: 1, borderRadius: radius.md, paddingHorizontal: spacing.lg,
+      paddingTop: spacing.sm, paddingBottom: spacing.xs, marginBottom: spacing.md,
+    },
+    inputWrapperFocused: {},
+    inputLabel: { ...type.eyebrow, fontSize: 10, marginBottom: 2 },
+    input: { backgroundColor: 'transparent', fontSize: 15, paddingHorizontal: 0, height: 40 },
+    strengthRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: -spacing.xs, marginBottom: spacing.md },
+    strengthBar: { flex: 1, height: 3, borderRadius: 2 },
+    strengthLabel: { fontSize: 11, marginLeft: spacing.xs, minWidth: 80 },
+    errorBox: { borderRadius: radius.sm, borderLeftWidth: 3, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, marginBottom: spacing.md },
+    errorText: { fontSize: 13 },
+    button: {
+      paddingVertical: spacing.lg, borderRadius: radius.md, alignItems: 'center',
+      minHeight: 52, shadowColor: theme.primary, shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.3, shadowRadius: 12, elevation: 6,
+    },
+    buttonText: { ...type.bodyStrong, fontSize: 15, letterSpacing: 1.5, textTransform: 'uppercase' },
+    terms: { fontSize: 12, textAlign: 'center', lineHeight: 18, marginTop: spacing.xs },
+    termsLink: { fontWeight: '600' },
+    footer: { flexDirection: 'row', justifyContent: 'center', marginTop: spacing.xs, paddingBottom: spacing.sm },
+    footerText: { fontSize: 14 },
+    footerLink: { fontSize: 14, fontWeight: '600' },
+  });
+}
