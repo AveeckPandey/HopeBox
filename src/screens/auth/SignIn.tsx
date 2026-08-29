@@ -69,7 +69,7 @@ export default function SignIn({ navigation }) {
       await Promise.race([authPromise, timeoutPromise]);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       snackbar.success(`Welcome back to ${tApp.name}`);
-    } catch (err) {
+    } catch (err: any) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       logger.logError('auth/SignIn', err);
       if (err.message === 'timeout') setError(t.errors.timeout);

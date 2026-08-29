@@ -15,7 +15,7 @@ import { logger } from '../../services/logger';
 import ScreenHeader from '../../components/ScreenHeader';
 import SurfaceCard from '../../components/SurfaceCard';
 import ThemedTextInput from '../../components/ThemedTextInput';
-import ChipGroup from '../../components/ChipGroup';
+import ChipGroup, { type ChipOption } from '../../components/ChipGroup';
 import FadeInUp from '../../components/FadeInUp';
 import AmbientGlow from '../../components/AmbientGlow';
 import { layout, radius, spacing, type } from '../../theme/tokens';
@@ -143,7 +143,7 @@ export default function AdminInventory() {
                 <View style={styles.field}>
                   <Text style={[styles.label, { color: theme.muted }]}>Warehouse</Text>
                   <ChipGroup
-                    options={warehouseOptions}
+                    options={warehouseOptions as ChipOption[]}
                     value={warehouseId}
                     onChange={setWarehouseId}
                     scrollable={false}
@@ -161,7 +161,7 @@ export default function AdminInventory() {
                 <View key={c.id} style={styles.row}>
                   <View style={[styles.iconDot, { backgroundColor: c.color || theme.muted }]}>
                     <MaterialCommunityIcons
-                      name={safeIcon(c.icon)}
+                      name={safeIcon(c.icon) as any}
                       size={16}
                       color={theme.primaryText}
                     />

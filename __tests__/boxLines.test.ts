@@ -7,6 +7,7 @@ import {
   validateContents,
 } from '../src/services/boxLines';
 
+/// <reference path="./jest-globals.d.ts" />
 // `boxLines` is the input gate for box creation / edit. The
 // AddBox and EditBox screens call validateContents() and block
 // submit on any non-empty error list. If this file silently

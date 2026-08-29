@@ -1,15 +1,14 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { addDoc, collection, Timestamp } from 'firebase/firestore';
+import { doc, updateDoc } from 'firebase/firestore';
 
 import { db } from '../../services/firebase';
 import { useAppTheme } from '../../theme/AppThemeContext';
-import { useWarehouse } from '../../contexts/WarehouseContext';
 import { useUser } from '../../contexts/UserContext';
-import { useCommodities, useTemplates } from '../../contexts/CommoditiesContext';
-import { logAction } from '../../services/audit';
+import { useCommodities } from '../../contexts/CommoditiesContext';
 import { useLanguage } from '../../contexts/LanguageContext';
+import { logAction } from '../../services/audit';
 import { snackbar } from '../../hooks/useSnackbar';
 import { needsBatch, needsExpiry, safeIcon } from '../../services/commodities';
 import { isFlatLine, normalizeLine, validateContents } from '../../services/boxLines';
@@ -19,16 +18,15 @@ import { logger } from '../../services/logger';
 import ScreenHeader from '../../components/ScreenHeader';
 import SurfaceCard from '../../components/SurfaceCard';
 import ThemedTextInput from '../../components/ThemedTextInput';
-import ChipGroup from '../../components/ChipGroup';
+import EmptyState from '../../components/EmptyState';
 import FadeInUp from '../../components/FadeInUp';
 import AmbientGlow from '../../components/AmbientGlow';
-import EmptyState from '../../components/EmptyState';
+import ChipGroup from '../../components/ChipGroup';
 import { layout, radius, spacing, type } from '../../theme/tokens';
 
-// Per-commodity row. Manages its own qty / batch / expiry fields so the
-// parent AddBox screen only deals with a flat `contents` map. When the
-// commodity has neither expiryTracking nor batchTracking we render a
-// single numeric input; otherwise we render the extras inline.
+// Same row as AddBox — duplicated rather than extracted to a shared
+// file because the two screens evolve independently (AddBox owns the
+// template-selector UX, EditBox will eventually own delete-history UX).
 function CommodityLineRow({ commodity, value, onChange }) {
   const { theme } = useAppTheme();
   const { t: tAll, tf } = useLanguage();
@@ -37,13 +35,10 @@ function CommodityLineRow({ commodity, value, onChange }) {
   const showBatch = needsBatch(commodity);
   const showExpiry = needsExpiry(commodity);
 
-  // P22: unit conversion. If the commodity advertises a
-  // `unitConversion` table (e.g. { pack: 24 } for a tablet commodity),
-  // show a chip selector that lets the user enter qty in either
-  // the canonical unit or a derived unit. The form stores the
-  // raw input under `inputUnit` and the qty as-typed; the
-  // conversion to canonical units happens at save time in
-  // `cleanedContents`.
+  // P22: unit conversion. Mirrors the AddBox row so the user can
+  // edit an existing box using whatever unit they originally typed
+  // in. The form-only `inputUnit` field carries the working unit;
+  // we apply the conversion to canonical at save time.
   const conversions = useMemo(() => listConversions(commodity), [commodity]);
   const hasConversions = conversions.length > 0;
   const inputUnit = line.inputUnit || commodity.unit;
@@ -55,9 +50,6 @@ function CommodityLineRow({ commodity, value, onChange }) {
   const setManufacturing = (manufacturingDate) =>
     onChange({ ...line, manufacturingDate: manufacturingDate || null });
 
-  // Chip options: canonical unit first, then any conversions
-  // advertised on the commodity. The hint text below the chips
-  // shows the conversion factor so the user can sanity-check.
   const unitOptions = useMemo(() => {
     const opts = [{ key: commodity.unit, label: commodity.unit }];
     for (const { unit } of conversions) {
@@ -66,10 +58,6 @@ function CommodityLineRow({ commodity, value, onChange }) {
     return opts;
   }, [conversions, commodity.unit]);
 
-  // Build a small "1 pack = 24 tablets" hint for whichever
-  // conversion matches the currently selected unit. This shows
-  // only when the user picks a non-canonical unit, so the
-  // canonical-unit case stays uncluttered.
   const activeConversion = useMemo(
     () => conversions.find((c) => c.unit === inputUnit && c.unit !== commodity.unit),
     [conversions, inputUnit, commodity.unit]
@@ -83,7 +71,7 @@ function CommodityLineRow({ commodity, value, onChange }) {
       <View style={lineStyles.headerRow}>
         <View style={[lineStyles.iconDot, { backgroundColor: commodity.color || theme.muted }]}>
           <MaterialCommunityIcons
-            name={safeIcon(commodity.icon)}
+            name={safeIcon(commodity.icon) as any}
             size={16}
             color={theme.primaryText}
           />
@@ -180,71 +168,66 @@ const lineStyles = StyleSheet.create({
   hint: { ...type.caption, marginTop: spacing.xs },
 });
 
-export default function AddBox({ navigation }) {
+// Pull the line state for a commodity out of either the new
+// `box.contents` map or one of the legacy `box.rice`/`box.dal`/
+// `box.sachets` fields. The fallback ensures boxes written by the
+// pre-v2.0 form still render with their values intact.
+function lineForRoute(commodity, item) {
+  if (item.contents && item.contents[commodity.id] != null) {
+    return item.contents[commodity.id];
+  }
+  const legacyKey = commodity.legacyKey; // optional, see below
+  if (legacyKey && item[legacyKey] != null) {
+    return item[legacyKey];
+  }
+  return null;
+}
+
+export default function EditBox({ route, navigation }) {
   const { theme } = useAppTheme();
-  const { warehouses, currentWarehouse } = useWarehouse();
   const { userData } = useUser();
   const { commodities, loading: commoditiesLoading } = useCommodities();
-  const { templates } = useTemplates();
   const { t: tAll } = useLanguage();
-  const t = tAll('addBox');
+  const t = tAll('editBox');
+  const tAdd = tAll('addBox');
 
-  const [contents, setContents] = useState({});
-  const [category, setCategory] = useState('');
-  const [tags, setTags] = useState('');
-  const [donorName, setDonorName] = useState('');
-  const [donorContact, setDonorContact] = useState('');
-  const [selectedWarehouse, setSelectedWarehouse] = useState(currentWarehouse?.id || '');
-  const [templateId, setTemplateId] = useState('');
+  // The early-return guard runs *after* every hook below, so React's
+  // rules of hooks remain satisfied even if the user deep-linked here
+  // without a `params.item`.
+  const routeItem = route?.params?.item;
+  const initialContents = useMemo(() => {
+    if (!routeItem) return {};
+    const out = {};
+    for (const c of commodities) {
+      const v = lineForRoute(c, routeItem);
+      if (v != null) out[c.id] = normalizeLine(v);
+    }
+    return out;
+  }, [routeItem, commodities]);
+
+  const [contents, setContents] = useState(initialContents);
+  const [category, setCategory] = useState(routeItem?.category || '');
+  const [tags, setTags] = useState((routeItem?.tags || []).join(', '));
+  const [donorName, setDonorName] = useState(routeItem?.donorName || '');
+  const [donorContact, setDonorContact] = useState(routeItem?.donorContact || '');
   const [busy, setBusy] = useState(false);
   const styles = useMemo(() => createStyles(theme), [theme]);
 
-  // Default the warehouse selector to the active warehouse whenever it
-  // changes. Falls back to the first warehouse if the active one is
-  // missing (e.g. user navigated here before context hydrated).
-  useEffect(() => {
-    if (!selectedWarehouse && (currentWarehouse?.id || warehouses[0]?.id)) {
-      // Intentional synchronous setState for initial sync with props.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setSelectedWarehouse(currentWarehouse?.id || warehouses[0].id);
-    }
-  }, [currentWarehouse, warehouses, selectedWarehouse]);
+  if (!routeItem) {
+    return (
+      <View style={{ flex: 1, backgroundColor: theme.background }}>
+        <EmptyState
+          icon="cube-outline"
+          title="No box selected"
+          message="Pick a box from the registry to edit its contents."
+          actionLabel="Back to boxes"
+          onAction={() => navigation.goBack()}
+        />
+      </View>
+    );
+  }
 
-  const warehouseOptions = useMemo(
-    () => warehouses.map((wh) => ({ key: wh.id, label: wh.name })),
-    [warehouses]
-  );
-
-  const templateOptions = useMemo(() => {
-    const opts = [{ key: '', label: t.templateNone }];
-    for (const tmpl of templates) {
-      opts.push({ key: tmpl.id, label: tmpl.name });
-    }
-    return opts;
-  }, [templates, t.templateNone]);
-
-  // Apply a template by writing its commodity map into the form state.
-  // The map is `{ commodityId: qty }` — flat shape is fine because the
-  // form state stores each line as a normalized object that can carry
-  // batch/expiry once the user fills them in.
-  const applyTemplate = (id) => {
-    setTemplateId(id);
-    if (!id) return;
-    const tmpl = templates.find((x) => x.id === id);
-    if (!tmpl) return;
-    setContents((prev) => {
-      const next = { ...prev };
-      for (const [cid, qty] of Object.entries(tmpl.commodities || {})) {
-        const existing = normalizeLine(prev[cid]);
-        // Don't clobber a line the user has already started editing
-        // unless the qty is still 0.
-        if (!existing.qty) {
-          next[cid] = { qty: Number(qty) || 0, batchNumber: null, expiryDate: null, manufacturingDate: null };
-        }
-      }
-      return next;
-    });
-  };
+  const item = routeItem;
 
   const handleLineChange = (commodityId, line) => {
     setContents((prev) => {
@@ -258,58 +241,53 @@ export default function AddBox({ navigation }) {
     });
   };
 
-  const handleAddBox = async () => {
+  const handleUpdate = async () => {
     if (busy) return;
-    // P22: when the user entered a line in a non-canonical unit
-    // (e.g. "2 packs" for a tablet commodity where 1 pack = 24),
-    // convert the qty to the canonical unit before saving. The
-    // stored line keeps batch/expiry metadata but drops the
-    // inputUnit field — it's a form-only signal.
-    const commoditiesById = Object.fromEntries(commodities.map((c) => [c.id, c]));
-    const cleanedContents = {};
-    for (const [k, v] of Object.entries(contents)) {
-      const line = normalizeLine(v);
-      // `inputUnit` is form-only and not part of normalizeLine's
-      // output, so read it off the raw `v` shape.
-      const inputUnit = v && typeof v === 'object' ? v.inputUnit : null;
-      if (line.qty > 0) {
-        const commodity = commoditiesById[k];
-        const fromUnit = inputUnit || commodity?.unit;
-        const canonicalQty = commodity && fromUnit && fromUnit !== commodity.unit
-          ? applyUnitConversion(line.qty, fromUnit, commodity)
-          : line.qty;
-        cleanedContents[k] = { ...line, qty: canonicalQty };
-      }
-    }
-    if (Object.keys(cleanedContents).length === 0) {
-      snackbar.error(t.addAtLeastOne);
-      return;
-    }
-    const errors = validateContents(cleanedContents, commodities, { strict: true });
-    if (errors.length > 0) {
-      snackbar.error(`${t.validationFailed}: ${errors[0]}`);
-      return;
-    }
     setBusy(true);
     try {
+      // P22: apply unit conversion (the AddBox flow's `inputUnit`
+      // field can be carried into an edit session when the user
+      // re-opens a box). Read the form-only `inputUnit` from the
+      // raw `v` because `normalizeLine` drops it. The form state
+      // is a wide `Record<string, any>` (commodity id → line), so
+      // TS sees `v` as `any` here; we narrow with a runtime guard
+      // and cast to a `string | null` for the conversion call.
+      const commoditiesById = Object.fromEntries(commodities.map((c) => [c.id, c]));
+      const cleanedContents = {};
+      for (const [k, v] of Object.entries(contents)) {
+        const line = normalizeLine(v);
+        const inputUnit =
+          v && typeof v === 'object' && 'inputUnit' in (v as object)
+            ? ((v as { inputUnit?: string | null }).inputUnit ?? null)
+            : null;
+        if (line.qty > 0) {
+          const commodity = commoditiesById[k];
+          const fromUnit = inputUnit || commodity?.unit;
+          const canonicalQty = commodity && fromUnit && fromUnit !== commodity.unit
+            ? applyUnitConversion(line.qty, fromUnit, commodity)
+            : line.qty;
+          cleanedContents[k] = { ...line, qty: canonicalQty };
+        }
+      }
+      const errors = validateContents(cleanedContents, commodities, { strict: false });
+      if (errors.length > 0) {
+        snackbar.error(`${tAdd.validationFailed}: ${errors[0]}`);
+        setBusy(false);
+        return;
+      }
       const tagsArray = tags.split(',').map((tag) => tag.trim()).filter(Boolean);
-      await addDoc(collection(db, 'boxes'), {
+      await updateDoc(doc(db, 'boxes', item.id), {
         contents: cleanedContents,
-        templateId: templateId || null,
-        status: 'stored',
         category: category.trim() || null,
         tags: tagsArray,
         donorName: donorName.trim() || null,
         donorContact: donorContact.trim() || null,
-        warehouseId: selectedWarehouse || null,
-        createdAt: Timestamp.now(),
-        createdBy: userData?.id || null,
       });
-      await logAction('box_created', { boxId: 'new', lineCount: Object.keys(cleanedContents).length }, userData?.id);
+      await logAction('box_updated', { boxId: item.id }, userData?.id);
       snackbar.success(t.success);
       navigation.goBack();
     } catch (err) {
-      logger.logError('AddBox/save', err);
+      logger.logError('EditBox/save', err, { boxId: item.id });
       snackbar.error(t.failed);
     } finally {
       setBusy(false);
@@ -322,7 +300,7 @@ export default function AddBox({ navigation }) {
         <EmptyState
           icon="package-variant-closed"
           title="No commodities configured"
-          message="An admin must set up the commodity catalog before boxes can be created."
+          message="An admin must set up the commodity catalog before boxes can be edited."
           actionLabel="Back"
           onAction={() => navigation.goBack()}
         />
@@ -336,35 +314,10 @@ export default function AddBox({ navigation }) {
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         <View style={styles.contentWrap}>
           <FadeInUp delay={0}>
-            <ScreenHeader eyebrow={t.eyebrow} title={t.title} subtitle={t.subtitle} />
+            <ScreenHeader eyebrow={t.eyebrow} title={t.title} subtitle={`${t.subtitle} (${item.id})`} />
           </FadeInUp>
-
           <FadeInUp delay={80}>
             <SurfaceCard>
-              {warehouses.length > 1 ? (
-                <View style={styles.field}>
-                  <Text style={[styles.label, { color: theme.muted }]}>Warehouse</Text>
-                  <ChipGroup
-                    options={warehouseOptions}
-                    value={selectedWarehouse}
-                    onChange={setSelectedWarehouse}
-                    scrollable={false}
-                  />
-                </View>
-              ) : null}
-
-              {templateOptions.length > 1 ? (
-                <View style={styles.field}>
-                  <Text style={[styles.label, { color: theme.muted }]}>{t.template}</Text>
-                  <ChipGroup
-                    options={templateOptions}
-                    value={templateId}
-                    onChange={applyTemplate}
-                    scrollable={false}
-                  />
-                </View>
-              ) : null}
-
               <Text style={[styles.sectionTitle, { color: theme.muted }]}>{t.contents}</Text>
               {commodities.map((c) => (
                 <CommodityLineRow
@@ -377,40 +330,28 @@ export default function AddBox({ navigation }) {
 
               <View style={styles.divider} />
 
+              <ThemedTextInput label={tAdd.category} value={category} onChangeText={setCategory} />
+              <ThemedTextInput label={tAdd.tags} value={tags} onChangeText={setTags} />
+              <ThemedTextInput label={tAdd.donorName} value={donorName} onChangeText={setDonorName} />
               <ThemedTextInput
-                label={t.category}
-                value={category}
-                onChangeText={setCategory}
-              />
-              <ThemedTextInput
-                label={t.tags}
-                value={tags}
-                onChangeText={setTags}
-              />
-              <ThemedTextInput
-                label={t.donorName}
-                value={donorName}
-                onChangeText={setDonorName}
-              />
-              <ThemedTextInput
-                label={t.donorContact}
+                label={tAdd.donorContact}
                 value={donorContact}
                 onChangeText={setDonorContact}
                 keyboardType="phone-pad"
               />
 
               <Pressable
-                onPress={handleAddBox}
+                onPress={handleUpdate}
                 disabled={busy}
                 accessibilityRole="button"
-                accessibilityLabel={t.create}
+                accessibilityLabel={t.save}
                 style={({ pressed }) => [
                   styles.cta,
                   { backgroundColor: theme.primary, opacity: busy ? 0.6 : pressed ? 0.85 : 1 },
                 ]}
               >
-                <MaterialCommunityIcons name="plus" size={18} color={theme.primaryText} />
-                <Text style={[styles.ctaText, { color: theme.primaryText }]}>{t.create}</Text>
+                <MaterialCommunityIcons name="content-save-outline" size={18} color={theme.primaryText} />
+                <Text style={[styles.ctaText, { color: theme.primaryText }]}>{t.save}</Text>
               </Pressable>
             </SurfaceCard>
           </FadeInUp>
@@ -432,8 +373,6 @@ function createStyles(theme) {
       paddingVertical: spacing.md,
       gap: spacing.lg,
     },
-    field: { marginBottom: spacing.md },
-    label: { ...type.eyebrow, marginBottom: spacing.sm },
     sectionTitle: {
       ...type.eyebrow,
       marginTop: spacing.md,

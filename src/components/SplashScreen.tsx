@@ -12,7 +12,7 @@ import { spacing, type } from '../theme/tokens';
 // the auth or main navigator. The swap is instant — no exit
 // animation — because the splash and the first screen share the
 // same background.
-export default function SplashScreen({ message }) {
+export default function SplashScreen({ message }: { message?: string }) {
   const { theme } = useAppTheme();
   const styles = createStyles(theme);
   return (

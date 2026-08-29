@@ -2,7 +2,17 @@ import { useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ActivityIndicator, IconButton } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { FileSystem } from 'expo-file-system';
+// P11: `expo-file-system` SDK 54+ removed the legacy `FileSystem`
+// namespace from the package root. The deprecation notes point to
+// `expo-file-system/legacy` for the old `writeAsStringAsync` /
+// `EncodingType` API. The legacy subpath exports individual
+// functions rather than a `FileSystem` namespace, so we destructure
+// the exact call we need. `EncodingType` lives in a sibling types
+// subpath and is imported separately. Once the project drops
+// support for older SDKs, this can move to the new `File` class
+// (`new File(uri).write(content, options)`).
+import * as FileSystem from 'expo-file-system/legacy';
+import { EncodingType } from 'expo-file-system/legacy';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import QRCode from 'react-native-qrcode-svg';
@@ -52,20 +62,20 @@ export default function PrintQR({ route, navigation }) {
 
   const getQrFileUri = () => `${FileSystem.documentDirectory}qr-${item.id}.png`;
 
-  const getQrDataUrl = () =>
+  const getQrDataUrl = (): Promise<string> =>
     new Promise((resolve, reject) => {
       if (!qrRef.current) { reject(new Error('QR ref not ready')); return; }
-      qrRef.current.toDataURL((base64) => {
+      qrRef.current.toDataURL((base64: string | undefined) => {
         if (!base64) { reject(new Error('QR export failed')); return; }
         resolve(`data:image/png;base64,${base64}`);
       });
     });
 
   const saveQrFile = async () => {
-    const qrDataUrl = await getQrDataUrl();
+    const qrDataUrl: string = await getQrDataUrl();
     const base64Data = qrDataUrl.replace(/^data:image\/png;base64,/, '');
     const fileUri = getQrFileUri();
-    await FileSystem.writeAsStringAsync(fileUri, base64Data, { encoding: FileSystem.EncodingType.Base64 });
+    await FileSystem.writeAsStringAsync(fileUri, base64Data, { encoding: EncodingType.Base64 });
     return { fileUri, qrDataUrl };
   };
 

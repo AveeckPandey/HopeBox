@@ -1,5 +1,5 @@
-import { useLayoutEffect } from 'react';
-import { Platform, StyleSheet, UIManager } from 'react-native';
+import { useLayoutEffect, type ReactNode } from 'react';
+import { Platform, StyleSheet, UIManager, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -34,6 +34,12 @@ export default function FadeInUp({
   duration = 520,
   distance = 24,
   style,
+}: {
+  children: ReactNode;
+  delay?: number;
+  duration?: number;
+  distance?: number;
+  style?: StyleProp<ViewStyle>;
 }) {
   // Start the shared value at a barely-visible 0.001 so that if
   // the worklet runtime hasn't bootstrapped by the time the

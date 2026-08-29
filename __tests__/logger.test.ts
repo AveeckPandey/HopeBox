@@ -1,3 +1,4 @@
+/// <reference path="./jest-globals.d.ts" />
 // P42: logger forwards `logError` to Sentry when the package is
 // installed and the SDK exposes `captureException`. The four
 // guarantees we want to lock down:
@@ -17,7 +18,7 @@
 // mock lets the test pass on a fresh clone where the package
 // isn't yet installed in node_modules.
 
-let mockCaptureException;
+let mockCaptureException: jest.Mock;
 
 jest.mock(
   '@sentry/react-native',
@@ -30,8 +31,8 @@ jest.mock(
 );
 
 describe('logger', () => {
-  let consoleWarn;
-  let consoleLog;
+  let consoleWarn: jest.SpyInstance;
+  let consoleLog: jest.SpyInstance;
 
   beforeEach(() => {
     jest.resetModules();
@@ -50,7 +51,11 @@ describe('logger', () => {
     const err = new Error('boom');
     logger.logError('test/context', err, { foo: 'bar' });
     expect(mockCaptureException).toHaveBeenCalledTimes(1);
-    const [captured, opts] = mockCaptureException.mock.calls[0];
+    const call = mockCaptureException.mock.calls[0] as unknown as [
+      Error,
+      { tags: { context: string }; extra: Record<string, unknown> }
+    ];
+    const [captured, opts] = call;
     expect(captured).toBe(err);
     expect(opts.tags.context).toBe('test/context');
     expect(opts.extra).toEqual({ foo: 'bar' });
@@ -63,7 +68,11 @@ describe('logger', () => {
       password: 'super-secret',
       token: 'shhh',
     });
-    const [, opts] = mockCaptureException.mock.calls[0];
+    const call = mockCaptureException.mock.calls[0] as unknown as [
+      Error,
+      { extra: Record<string, string> }
+    ];
+    const [, opts] = call;
     expect(opts.extra.email).toBe('a@b.c');
     expect(opts.extra.password).toBe('[redacted]');
     expect(opts.extra.token).toBe('[redacted]');

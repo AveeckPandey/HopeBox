@@ -1,4 +1,4 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { useAppTheme } from '../theme/AppThemeContext';
 import { radius, spacing, type } from '../theme/tokens';
 
@@ -14,6 +14,13 @@ export default function MetricTile({
   tone = 'default',
   style,
   numberOfLines = 1,
+}: {
+  label: string;
+  value: string | number;
+  unit?: string;
+  tone?: 'default' | 'primary' | 'success' | 'danger' | 'warning';
+  style?: StyleProp<ViewStyle>;
+  numberOfLines?: number;
 }) {
   const { theme } = useAppTheme();
   const styles = createStyles(theme);

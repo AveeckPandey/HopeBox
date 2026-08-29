@@ -55,7 +55,7 @@ export default function ForgotPassword({ navigation }) {
       // popping the screen — without this the user sometimes
       // sees the snackbar flash and then vanish on transition.
       setTimeout(() => navigation.goBack(), 600);
-    } catch (err) {
+    } catch (err: any) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       logger.logError('auth/ForgotPassword', err);
       // Firebase returns auth/user-not-found and auth/invalid-email

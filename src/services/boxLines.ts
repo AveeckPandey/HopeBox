@@ -32,6 +32,7 @@ export type NormalizedLine = {
   batchNumber: string | null;
   expiryDate: string | null;
   manufacturingDate: string | null;
+  inputUnit?: string | null;
 };
 
 export type ContentsMap = Record<string, BoxLineValue>;
@@ -95,15 +96,23 @@ export function flattenContents(contents: ContentsMap | null | undefined): Recor
 //
 // `strict: true` requires every required commodity to have qty > 0.
 // `strict: false` only checks for malformed shapes.
+//
+// `commodities` items are typed with `id?` (not `id: string`) so the
+// call site can pass the `Commodity[]` shape from services/commodities
+// directly without an extra filter step. Commodities missing an id
+// are silently skipped — they can't be matched against any line
+// anyway.
 export function validateContents(
   contents: ContentsMap,
-  commodities: Array<{ id: string; name: string; expiryTracking?: boolean; batchTracking?: boolean; required?: boolean }>,
+  commodities: Array<{ id?: string; name: string; expiryTracking?: boolean; batchTracking?: boolean; required?: boolean }>,
   { strict = true }: { strict?: boolean } = {}
 ): string[] {
   const errors: string[] = [];
   const map = contents || {};
-  const byId: Record<string, { id: string; name: string; expiryTracking?: boolean; batchTracking?: boolean; required?: boolean }> = {};
-  for (const c of commodities || []) byId[c.id] = c;
+  const byId: Record<string, { id?: string; name: string; expiryTracking?: boolean; batchTracking?: boolean; required?: boolean }> = {};
+  for (const c of commodities || []) {
+    if (c.id) byId[c.id] = c;
+  }
 
   for (const [commodityId, raw] of Object.entries(map)) {
     const commodity = byId[commodityId];

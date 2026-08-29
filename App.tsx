@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { Animated, useColorScheme } from 'react-native';
-import { NavigationContainer, DarkTheme, DefaultTheme } from '@react-navigation/native';
+import { NavigationContainer, DarkTheme, DefaultTheme, type Theme as NavigationTheme } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { StatusBar } from 'expo-status-bar';
 
 import AuthNavigator from './src/navigation/AuthNavigator';
 import AppNavigator from './src/navigation/AppNavigator';
-import { AppThemeContext, palettes } from './src/theme/AppThemeContext';
+import { AppThemeContext, palettes, type ThemeMode } from './src/theme/AppThemeContext';
 import { UserProvider, useUser } from './src/contexts/UserContext';
 import { WarehouseProvider } from './src/contexts/WarehouseContext';
 import { CommoditiesProvider } from './src/contexts/CommoditiesContext';
@@ -40,7 +40,7 @@ if (process.env.EXPO_PUBLIC_SENTRY_DSN) {
     // Sentry init failed (e.g. native module not yet linked). Don't
     // block app startup — logger will still capture locally.
     // eslint-disable-next-line no-console
-    console.warn('[App] Sentry init skipped:', err?.message || err);
+    console.warn('[App] Sentry init skipped:', (err as Error)?.message || err);
   }
 }
 
@@ -48,7 +48,7 @@ const THEME_KEY = 'inventory-app-theme';
 
 export default function App() {
   const systemTheme = useColorScheme();
-  const [themeName, setThemeName] = useState('dark');
+  const [themeName, setThemeName] = useState<ThemeMode>('dark');
 
   useEffect(() => {
     const loadTheme = async () => {
@@ -63,13 +63,13 @@ export default function App() {
   }, [systemTheme]);
 
   const toggleTheme = async () => {
-    const nextTheme = themeName === 'dark' ? 'light' : 'dark';
+    const nextTheme: ThemeMode = themeName === 'dark' ? 'light' : 'dark';
     setThemeName(nextTheme);
     await AsyncStorage.setItem(THEME_KEY, nextTheme);
   };
 
   const appPalette = palettes[themeName];
-  const navigationTheme = {
+  const navigationTheme: NavigationTheme = {
     ...(themeName === 'dark' ? DarkTheme : DefaultTheme),
     colors: {
       ...(themeName === 'dark' ? DarkTheme.colors : DefaultTheme.colors),
@@ -117,7 +117,7 @@ export default function App() {
 // (`'splash' | 'app'`) means the navigator doesn't render until the
 // fade has started, so the user never sees the navigator behind a
 // half-faded splash.
-function NavigationRoot({ navigationTheme, themeName }) {
+function NavigationRoot({ navigationTheme, themeName }: { navigationTheme: NavigationTheme; themeName: ThemeMode }) {
   const { userData, loading } = useUser();
   return (
     <NavigationContainer theme={navigationTheme}>
@@ -133,9 +133,9 @@ function NavigationRoot({ navigationTheme, themeName }) {
 // P47: wrapper that holds the splash in an Animated.View and only
 // swaps to the navigator once the fade has begun. The `ready` prop
 // flips true when `UserContext.loading` resolves.
-function BootSplash({ ready }) {
+function BootSplash({ ready }: { ready: boolean }) {
   const opacity = useRef(new Animated.Value(1)).current;
-  const [phase, setPhase] = useState('splash');
+  const [phase, setPhase] = useState<'splash' | 'app'>('splash');
 
   useEffect(() => {
     if (!ready) return;

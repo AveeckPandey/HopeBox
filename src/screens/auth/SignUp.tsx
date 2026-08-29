@@ -90,7 +90,7 @@ export default function SignUp({ navigation }) {
       }, { merge: true });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       snackbar.success(`Welcome to ${tApp.name}`);
-    } catch (err) {
+    } catch (err: any) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       logger.logError('auth/SignUp', err);
       if (err.code === 'auth/email-already-in-use') setError(t.errors.emailInUse);

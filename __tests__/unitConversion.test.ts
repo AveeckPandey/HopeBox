@@ -1,9 +1,11 @@
+/// <reference path="./jest-globals.d.ts" />
 import {
   convert,
   applyUnitConversion,
   listConversions,
   getUnitKind,
 } from '../src/services/unitConversion';
+import type { Commodity } from '../src/services/commodities';
 
 describe('unitConversion', () => {
   describe('convert', () => {
@@ -24,12 +26,15 @@ describe('unitConversion', () => {
       expect(convert(1, 'barn', 'kg')).toBeNull();
     });
     it('returns null for non-finite input', () => {
-      expect(convert('not a number', 'kg', 'g')).toBeNull();
+      expect(convert('not a number' as unknown as number, 'kg', 'g')).toBeNull();
     });
   });
 
   describe('applyUnitConversion', () => {
-    const commodity = { unit: 'tablet', unitConversion: { pack: 24, carton: 480 } };
+    const commodity: Pick<Commodity, 'unit' | 'unitConversion'> = {
+      unit: 'tablet',
+      unitConversion: { pack: 24, carton: 480 },
+    };
 
     it('multiplies by the table factor for a known unit', () => {
       expect(applyUnitConversion(2, 'pack', commodity)).toBe(48);
@@ -50,13 +55,18 @@ describe('unitConversion', () => {
 
   describe('listConversions', () => {
     it('returns an array of {unit, factor, kind} entries', () => {
-      const c = { unit: 'tablet', unitConversion: { pack: 24 } };
+      const c: Pick<Commodity, 'unit' | 'unitConversion'> = {
+        unit: 'tablet',
+        unitConversion: { pack: 24 },
+      };
       expect(listConversions(c)).toEqual([
         { unit: 'pack', factor: 24, kind: 'count' },
       ]);
     });
     it('returns an empty array when no table is set', () => {
-      expect(listConversions({ unit: 'kg' })).toEqual([]);
+      // Pass the same shape the function expects (only
+      // unitConversion is read); `unit` is ignored.
+      expect(listConversions({ unitConversion: undefined })).toEqual([]);
     });
   });
 

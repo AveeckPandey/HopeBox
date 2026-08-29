@@ -1,24 +1,38 @@
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View, type AccessibilityProps, type StyleProp, type ViewStyle } from 'react-native';
 import { useAppTheme } from '../theme/AppThemeContext';
 import { radius, spacing, type } from '../theme/tokens';
 
 // Horizontally-scrollable group of filter chips. Replaces the duplicated
 // `filterRow` + Button blocks in Boxes.js, AddBox.js, and similar.
+//
+// Exported so call sites that build options from untyped data
+// (e.g. `t.filterAll` from i18n, which is `any`) can cast to it
+// at the boundary without losing shape on the call side.
+export type ChipOption = { key: string; label: string };
+
 export default function ChipGroup({
   options,         // [{ key, label }] OR string[]
   value,           // currently selected key
   onChange,        // (key) => void
   scrollable = true,
   style,
+  accessibilityLabel,
+}: {
+  options: (ChipOption | string)[];
+  value?: string;
+  onChange?: (key: string) => void;
+  scrollable?: boolean;
+  style?: StyleProp<ViewStyle>;
+  accessibilityLabel?: string;
 }) {
   const { theme } = useAppTheme();
   const styles = createStyles(theme);
 
-  const normalized = options.map((o) =>
+  const normalized: ChipOption[] = options.map((o) =>
     typeof o === 'string' ? { key: o, label: o.charAt(0).toUpperCase() + o.slice(1) } : o
   );
 
-  const renderChip = (opt) => {
+  const renderChip = (opt: ChipOption) => {
     const selected = value === opt.key;
     return (
       <Pressable

@@ -14,10 +14,10 @@ import { useCommodities, useTemplates } from '../../contexts/CommoditiesContext'
 import {
   boxesByEarliestExpiry,
   chartRowsForTemplate,
-  flattenContents,
   possibleBoxesFromTemplate,
   shortageForTarget,
 } from '../../services/inventoryMath';
+import { flattenContents } from '../../services/boxLines';
 import { exportToCSV, exportToPDF } from '../../services/export';
 import { logAction } from '../../services/audit';
 import { useLanguage } from '../../contexts/LanguageContext';
@@ -83,7 +83,7 @@ export default function Dashboard({ navigation }) {
   }, [currentWarehouse]);
 
   useEffect(() => {
-    let boxesRef = collection(db, 'boxes');
+    let boxesRef: any = collection(db, 'boxes');
     if (currentWarehouse?.id) {
       boxesRef = query(boxesRef, where('warehouseId', '==', currentWarehouse.id));
     }
@@ -426,7 +426,7 @@ export default function Dashboard({ navigation }) {
                   >
                     <View style={[styles.fefoIcon, { backgroundColor: alert.commodity.color || theme.warning }]}>
                       <MaterialCommunityIcons
-                        name={safeIcon(alert.commodity.icon)}
+                        name={safeIcon(alert.commodity.icon) as any}
                         size={16}
                         color={theme.primaryText}
                       />

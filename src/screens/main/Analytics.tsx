@@ -8,7 +8,7 @@ import { db } from '../../services/firebase';
 import { useAppTheme } from '../../theme/AppThemeContext';
 import { useCommodities } from '../../contexts/CommoditiesContext';
 import { useLanguage } from '../../contexts/LanguageContext';
-import { flattenContents } from '../../services/inventoryMath';
+import { flattenContents } from '../../services/boxLines';
 import { firestoreOnError } from '../../hooks/useFirestoreSubscription';
 import { logger } from '../../services/logger';
 
@@ -198,9 +198,9 @@ export default function Analytics() {
     const dispatched = boxes.filter((b) => b.status === 'dispatched').length;
     const returned = boxes.filter((b) => b.status === 'returned').length;
 
-    const categoryCounts = {};
-    const warehouseCounts = {};
-    const donorCounts = {};
+    const categoryCounts: Record<string, number> = {};
+    const warehouseCounts: Record<string, number> = {};
+    const donorCounts: Record<string, number> = {};
 
     boxes.forEach((b) => {
       if (b.category) categoryCounts[b.category] = (categoryCounts[b.category] || 0) + 1;

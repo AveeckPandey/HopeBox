@@ -372,7 +372,7 @@ function TemplateEditor({ visible, initial, onClose, onSave, theme, styles, t })
                 <View key={c.id} style={styles.qtyRow}>
                   <View style={[styles.iconDot, { backgroundColor: c.color || theme.muted }]}>
                     <MaterialCommunityIcons
-                      name={c.icon || 'package-variant'}
+                      name={(c.icon || 'package-variant') as any}
                       size={14}
                       color={theme.primaryText}
                     />

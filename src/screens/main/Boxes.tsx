@@ -20,7 +20,7 @@ import { firestoreOnError } from '../../hooks/useFirestoreSubscription';
 import ScreenHeader from '../../components/ScreenHeader';
 import SurfaceCard from '../../components/SurfaceCard';
 import MetricTile from '../../components/MetricTile';
-import ChipGroup from '../../components/ChipGroup';
+import ChipGroup, { type ChipOption } from '../../components/ChipGroup';
 import StatusBadge from '../../components/StatusBadge';
 import EmptyState from '../../components/EmptyState';
 import ThemedTextInput from '../../components/ThemedTextInput';
@@ -67,7 +67,7 @@ export default function Boxes({ navigation }) {
   const styles = useMemo(() => createStyles(theme), [theme]);
 
   useEffect(() => {
-    let boxesRef = collection(db, 'boxes');
+    let boxesRef: any = collection(db, 'boxes');
     if (currentWarehouse?.id) {
       boxesRef = query(boxesRef, where('warehouseId', '==', currentWarehouse.id));
     }
@@ -134,7 +134,7 @@ export default function Boxes({ navigation }) {
   }, [t.deleteConfirmTitle, t.deleteConfirmMessage, t.delete, t.deleteSuccess, t.deleteFailed, tCommon.cancel, userData]);
 
   const allCategories = useMemo(() => {
-    const cats = new Set();
+    const cats = new Set<string>();
     boxes.forEach((b) => {
       if (b.category) cats.add(b.category);
       if (b.tags) b.tags.forEach((tag) => cats.add(tag));
@@ -142,7 +142,7 @@ export default function Boxes({ navigation }) {
     return Array.from(cats);
   }, [boxes]);
 
-  const categoryOptions = useMemo(
+  const categoryOptions = useMemo<ChipOption[]>(
     () => [{ key: 'all', label: t.filterAll }, ...allCategories.map((c) => ({ key: c, label: c }))],
     [allCategories, t.filterAll]
   );

@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { signOut } from 'firebase/auth';
 import * as Haptics from 'expo-haptics';
@@ -13,10 +13,10 @@ import { useLanguage } from '../../contexts/LanguageContext';
 import { snackbar } from '../../hooks/useSnackbar';
 import { layout, radius, spacing, type } from '../../theme/tokens';
 
-export default function Settings({ navigation }) {
+export default function Settings({ navigation }: { navigation: any }) {
   const { theme, themeName, toggleTheme } = useAppTheme();
   const { userData, isAdmin, canEdit } = useUser();
-  const { t: tAll, language, setLanguage } = useLanguage();
+  const { t: tAll, tf, language, setLanguage } = useLanguage();
   const t = tAll('settings');
   const tCommon = tAll('common');
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -35,10 +35,10 @@ export default function Settings({ navigation }) {
   // the loader table in LanguageContext; missing Hindi keys fall
   // back to English via the deep merge in `strings.hi.js`. No
   // "coming soon" snackbar — the switch is a real, working toggle.
-  const handleLanguageChange = (next) => {
+  const handleLanguageChange = (next: string) => {
     if (next === language) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setLanguage(next);
+    setLanguage(next as 'en' | 'hi');
   };
 
   const handleSignOut = () => {
@@ -169,20 +169,36 @@ export default function Settings({ navigation }) {
   );
 }
 
-function SettingRow({ theme, icon, label, value, onPress, showChevron, accessibilityLabel }) {
+function SettingRow({
+  theme,
+  icon,
+  label,
+  value,
+  onPress,
+  showChevron,
+  accessibilityLabel,
+}: {
+  theme: any;
+  icon: any;
+  label: string;
+  value?: string;
+  onPress?: () => void;
+  showChevron?: boolean;
+  accessibilityLabel?: string;
+}) {
   const interactive = !!onPress;
   const Wrap = interactive ? Pressable : View;
   return (
     <Wrap
-      onPress={onPress}
+      onPress={onPress as any}
       accessibilityRole={interactive ? 'button' : 'text'}
       accessibilityLabel={accessibilityLabel || (value ? `${label}: ${value}` : label)}
-      style={({ pressed }) => [
+      style={({ pressed }: { pressed: boolean }): StyleProp<ViewStyle> => [
         rowStyles.row,
         pressed && { opacity: 0.7 },
       ]}
     >
-      <MaterialCommunityIcons name={icon} size={22} color={theme.primary} />
+      <MaterialCommunityIcons name={icon as any} size={22} color={theme.primary} />
       <View style={rowStyles.textWrap}>
         <Text style={[rowStyles.label, { color: theme.muted }]}>{label}</Text>
         {value ? <Text style={[rowStyles.value, { color: theme.text }]}>{value}</Text> : null}
@@ -194,7 +210,7 @@ function SettingRow({ theme, icon, label, value, onPress, showChevron, accessibi
   );
 }
 
-const rowStyles = {
+const rowStyles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -205,7 +221,7 @@ const rowStyles = {
   textWrap: { flex: 1 },
   label: { ...type.caption, marginBottom: 2 },
   value: { ...type.bodyStrong },
-};
+});
 
 function createStyles(theme) {
   return StyleSheet.create({

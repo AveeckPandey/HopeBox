@@ -170,7 +170,7 @@ export default function AuditLog({ navigation }) {
 // sequence makes the screen feel laggy on first paint and the
 // per-item delay is imperceptible at this density. The header
 // still animates.
-const LogRow = memo(function LogRow({ item, theme, actor, userLabel: userLabelText, styles }) {
+const LogRow = memo(function LogRow({ item, theme, actor, userLabel: userLabelText, styles }: { item: any; theme: any; actor: any; userLabel: any; styles: any }) {
   const color = getActionColor(item.action, theme);
   return (
     <View style={styles.cardWrap}>

@@ -124,7 +124,10 @@ export type FefoLot = {
 
 export type BoxRecord = {
   id: string;
-  contents?: Record<string, { expiryDate?: string | { toMillis?: () => number } | null } | null>;
+  contents?: Record<
+    string,
+    { qty?: number; expiryDate?: string | { toMillis?: () => number } | null } | null
+  >;
 };
 
 // FEFO (First Expiry First Out): given an inventory map of

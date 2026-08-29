@@ -2,7 +2,7 @@
 // run in Node — no React Native / Expo preset needed.
 
 module.exports = {
-  testMatch: ['**/__tests__/**/*.test.js'],
+  testMatch: ['**/__tests__/**/*.test.{js,ts}'],
   testEnvironment: 'node',
   transform: {
     '^.+\\.[jt]sx?$': 'babel-jest',

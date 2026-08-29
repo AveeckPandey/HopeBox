@@ -18,9 +18,8 @@ import { firestoreOnError } from '../../hooks/useFirestoreSubscription';
 import {
   applyBoxToInventory,
   findNegativeQuantities,
-  flattenContents,
 } from '../../services/inventoryMath';
-import { lineQty } from '../../services/boxLines';
+import { lineQty, flattenContents } from '../../services/boxLines';
 
 import ScreenHeader from '../../components/ScreenHeader';
 import SurfaceCard from '../../components/SurfaceCard';
@@ -57,7 +56,7 @@ export default function BoxDetails({ route, navigation }) {
     if (routeItem.contents && Object.keys(routeItem.contents).length > 0) {
       return routeItem.contents;
     }
-    const legacy = {};
+    const legacy: Record<string, any> = {};
     for (const c of commodities) {
       if (routeItem[c.id] != null) legacy[c.id] = routeItem[c.id];
     }
@@ -197,7 +196,7 @@ export default function BoxDetails({ route, navigation }) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       snackbar.success(nextStatus === 'dispatched' ? t.dispatchSuccess : t.returnSuccess);
       navigation.goBack();
-    } catch (err) {
+    } catch (err: any) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       logger.logError('BoxDetails/statusChange', err, { nextStatus });
       const message = err.message?.startsWith('Insufficient inventory')

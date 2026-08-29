@@ -126,7 +126,7 @@ export default function ScanQR({ navigation }) {
   return (
     <View style={styles.screen}>
       <CameraView
-        style={StyleSheet.absoluteFillObject}
+        style={StyleSheet.absoluteFill}
         // P56: accept the full set of 1D and 2D barcodes that
         // NGO suppliers actually print. The previous `['qr']`
         // setting required a phone-only flow; field staff handed
@@ -185,7 +185,7 @@ export default function ScanQR({ navigation }) {
 
 function AmbientPad({ theme }) {
   return (
-    <View style={[StyleSheet.absoluteFillObject, { backgroundColor: theme.background }]} pointerEvents="none" />
+    <View style={[StyleSheet.absoluteFill, { backgroundColor: theme.background }]} pointerEvents="none" />
   );
 }
 

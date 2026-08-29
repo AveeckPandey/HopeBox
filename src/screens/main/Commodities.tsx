@@ -391,7 +391,7 @@ export default function Commodities({ navigation }) {
               <SurfaceCard style={styles.row}>
                 <View style={[styles.iconDot, { backgroundColor: c.color || theme.muted }]}>
                   <MaterialCommunityIcons
-                    name={safeIcon(c.icon)}
+                    name={safeIcon(c.icon) as any}
                     size={20}
                     color={theme.primaryText}
                   />

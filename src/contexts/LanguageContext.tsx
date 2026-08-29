@@ -23,10 +23,18 @@ const loaders: Record<Language, () => unknown> = {
 type LanguageValue = {
   language: Language;
   setLanguage: (lang: Language) => Promise<void>;
-  // `t` is overloaded. The two-arg form `t('common', 'scope')` returns
-  // the entire scope object (typed as Record). The single-arg form
-  // `t('auth.signIn')` returns the string at the dotted path.
-  t: (scopeOrPath: string, maybeKey?: string) => unknown;
+  // `t` returns the value at the path:
+  //   - t('auth') returns the auth scope object (so callers can
+  //     do `tAuth.errors.emailInvalid`)
+  //   - t('auth.signIn') walks a dotted path and returns the leaf
+  //     value (string for most leaves)
+  // The single call site picks the shape via the path. The return
+  // type is `any` to mirror the original JS behavior where the
+  // catalog is data-driven and call sites read properties
+  // (`tAuth.errors.emailInvalid`) without runtime type checks.
+  // Tightening this is a follow-up — see P11 / batch 5 note.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  t: (path: string) => any;
   tf: (path: string, params?: Record<string, string | number>) => string;
 };
 
@@ -38,7 +46,7 @@ const LanguageContext = createContext<LanguageValue>({
   t: ((key: string) => key) as any,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   tf: (key: string) => key as any,
-});
+} as LanguageValue);
 
 export function LanguageProvider({ children }: { children: ReactNode }) {
   const [language, setLanguageState] = useState<Language>("en");
@@ -67,14 +75,12 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   const catalog = (loaders[language] ? loaders[language]() : strings) as Record<string, unknown>;
 
   const t = useCallback(
-    (scopeOrPath: string, maybeKey?: string) => {
-      if (maybeKey === 'scope') {
-        // Two-arg form: return the whole scope object so call sites can
-        // do `const t = tAll('auth', 'scope'); t.signIn`.
-        const scope = catalog[scopeOrPath];
-        return (scope || {}) as Record<string, unknown>;
-      }
-      // Flat dotted-path lookup, e.g. t('auth.signIn')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (scopeOrPath: string): any => {
+      // Try the dotted-path lookup first. If the path is a single
+      // segment that matches a scope, fall through and return the
+      // whole scope object so call sites can do
+      // `const t = tAll('auth'); t.signIn`.
       const segments = String(scopeOrPath).split(".");
       let cursor: unknown = catalog;
       for (const seg of segments) {

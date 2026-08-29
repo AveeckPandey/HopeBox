@@ -1,4 +1,5 @@
-import { StyleSheet, View } from 'react-native';
+import { type ReactNode } from 'react';
+import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { useAppTheme } from '../theme/AppThemeContext';
 import { elevation, radius, spacing } from '../theme/tokens';
 
@@ -10,6 +11,11 @@ export default function SurfaceCard({
   style,
   tone = 'default', // 'default' | 'raised' | 'flat'
   padding = spacing.lg,
+}: {
+  children: ReactNode;
+  style?: StyleProp<ViewStyle>;
+  tone?: 'default' | 'raised' | 'flat';
+  padding?: number;
 }) {
   const { theme } = useAppTheme();
   const styles = createStyles(theme);
