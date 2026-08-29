@@ -9,7 +9,7 @@ import * as Sharing from "expo-sharing";
 
 // HTML escape for PDF table cells. Covers the five characters that
 // matter for cell text + attribute contexts.
-function escapeHtml(value) {
+function escapeHtml(value: unknown): string {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -25,7 +25,7 @@ function escapeHtml(value) {
 // formula. Prefixing a single apostrophe neutralizes the formula
 // while remaining human-readable when the cell is opened in a
 // plain text editor.
-function escapeCsv(value) {
+function escapeCsv(value: unknown): string {
   const str = String(value ?? "");
   if (/^[=+\-@\t\r]/.test(str)) {
     return `"'${str.replace(/"/g, '""')}"`;
@@ -33,7 +33,7 @@ function escapeCsv(value) {
   return `"${str.replace(/"/g, '""')}"`;
 }
 
-export const exportToCSV = async (data, filename = "export") => {
+export const exportToCSV = async (data: Record<string, unknown>[], filename = "export") => {
   if (!data.length) return;
 
   const headers = Object.keys(data[0]);
@@ -49,7 +49,9 @@ export const exportToCSV = async (data, filename = "export") => {
 
   const canShare = await Sharing.isAvailableAsync();
   if (canShare) {
-    const { FileSystem } = await import("expo-file-system");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const FS = await import("expo-file-system") as any;
+    const FileSystem = FS.default || FS;
     const path = FileSystem.documentDirectory + fileUri;
     await FileSystem.writeAsStringAsync(path, csvString);
     await Sharing.shareAsync(path, {
@@ -62,7 +64,7 @@ export const exportToCSV = async (data, filename = "export") => {
   return csvString;
 };
 
-export const exportToPDF = async (data, title = "Report", filename = "report") => {
+export const exportToPDF = async (data: Record<string, unknown>[], title = "Report", filename = "report") => {
   if (!data.length) return;
 
   const headers = Object.keys(data[0]);
@@ -133,16 +135,36 @@ export const exportToPDF = async (data, title = "Report", filename = "report") =
 // a `dispatchedAt` (Firestore timestamp), a `createdAt`, or nothing.
 // Fall back to "unknown" so the column is never blank — donors
 // reject rows with missing dates.
-function pickDate(box) {
+type DispatchedBox = {
+  id: string;
+  recipient?: string;
+  recipientContact?: string;
+  location?: string;
+  warehouseId?: string;
+  donorName?: string;
+  region?: string;
+  valueUSD?: number | string;
+  rice?: number | string;
+  dal?: number | string;
+  sachets?: number | string;
+  contents?: Record<string, number | { qty?: number; unit?: string; name?: string }>;
+  dispatchedAt?: unknown;
+  dispatchedOn?: unknown;
+  dispatched_at?: unknown;
+  createdAt?: unknown;
+};
+
+function pickDate(box: DispatchedBox): string {
   const ts = box.dispatchedAt || box.dispatchedOn || box.dispatched_at || box.createdAt;
   if (!ts) return "unknown";
   if (typeof ts === "string") return ts.slice(0, 10);
-  if (ts.toDate) return ts.toDate().toISOString().slice(0, 10);
+  const tsLike = ts as { toDate?: () => Date };
+  if (tsLike.toDate) return tsLike.toDate().toISOString().slice(0, 10);
   if (ts instanceof Date) return ts.toISOString().slice(0, 10);
   return String(ts).slice(0, 10);
 }
 
-function pickCommodityBreakdown(box) {
+function pickCommodityBreakdown(box: DispatchedBox) {
   // The contents map can be either a flat {id: qty} or a richer
   // {id: { qty, ... }} shape. We accept both.
   const contents = box.contents || {};
@@ -161,15 +183,15 @@ function pickCommodityBreakdown(box) {
   // If the box is the legacy shape with top-level rice/dal/sachets
   // fields, surface them so the report still has content.
   if (lines.length === 0) {
-    for (const k of ["rice", "dal", "sachets"]) {
-      const v = Number(box[k]);
+    for (const k of ["rice", "dal", "sachets"] as const) {
+      const v = Number((box as Record<string, unknown>)[k]);
       if (v) lines.push({ id: k, qty: v, unit: k === "sachets" ? "sachet" : "kg", name: k });
     }
   }
   return lines;
 }
 
-export const exportToEchoCSV = async (dispatchedBoxes, filename = "echo-distribution") => {
+export const exportToEchoCSV = async (dispatchedBoxes: DispatchedBox[], filename = "echo-distribution") => {
   if (!dispatchedBoxes || !dispatchedBoxes.length) return null;
   const ECHO_HEADERS = [
     "Reference", "DistributionDate", "BeneficiaryName", "BeneficiaryContact",
@@ -200,7 +222,9 @@ export const exportToEchoCSV = async (dispatchedBoxes, filename = "echo-distribu
   const fileUri = `${filename}.csv`;
   const canShare = await Sharing.isAvailableAsync();
   if (canShare) {
-    const { FileSystem } = await import("expo-file-system");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const FS = await import("expo-file-system") as any;
+    const FileSystem = FS.default || FS;
     const path = FileSystem.documentDirectory + fileUri;
     await FileSystem.writeAsStringAsync(path, csv);
     await Sharing.shareAsync(path, {
@@ -212,7 +236,7 @@ export const exportToEchoCSV = async (dispatchedBoxes, filename = "echo-distribu
   return csv;
 };
 
-export const exportToUsaidCSV = async (dispatchedBoxes, filename = "usaid-distribution") => {
+export const exportToUsaidCSV = async (dispatchedBoxes: DispatchedBox[], filename = "usaid-distribution") => {
   if (!dispatchedBoxes || !dispatchedBoxes.length) return null;
   const USAID_HEADERS = [
     "BoxID", "Date", "Region", "Beneficiary", "Commodity",
@@ -242,7 +266,9 @@ export const exportToUsaidCSV = async (dispatchedBoxes, filename = "usaid-distri
   const fileUri = `${filename}.csv`;
   const canShare = await Sharing.isAvailableAsync();
   if (canShare) {
-    const { FileSystem } = await import("expo-file-system");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const FS = await import("expo-file-system") as any;
+    const FileSystem = FS.default || FS;
     const path = FileSystem.documentDirectory + fileUri;
     await FileSystem.writeAsStringAsync(path, csv);
     await Sharing.shareAsync(path, {

@@ -328,9 +328,9 @@ export const strings = {
 // Deep-merge fallback: any key present in `en` but missing in the
 // Hindi catalog is filled with the English string. This keeps the
 // loader simple — partial translations degrade gracefully.
-function deepMerge(fallback, primary) {
-  const out = { ...(fallback || {}) };
-  for (const [k, v] of Object.entries(primary || {})) {
+function deepMerge(fallback: unknown, primary: unknown): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...((fallback as Record<string, unknown>) || {}) };
+  for (const [k, v] of Object.entries((primary as Record<string, unknown>) || {})) {
     if (
       v &&
       typeof v === "object" &&

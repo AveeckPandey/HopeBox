@@ -18,13 +18,13 @@
 
 const KNOWN_SENSITIVE_KEYS = ['password', 'token', 'apiKey', 'api_key'];
 
-function stripSensitive(value, depth = 0) {
+function stripSensitive(value: unknown, depth = 0): unknown {
   if (depth > 3) return '[truncated]';
   if (value == null) return value;
   if (typeof value !== 'object') return value;
   if (Array.isArray(value)) return value.map((v) => stripSensitive(v, depth + 1));
-  const out = {};
-  for (const [k, v] of Object.entries(value)) {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
     if (KNOWN_SENSITIVE_KEYS.includes(k)) {
       out[k] = '[redacted]';
     } else {
@@ -34,9 +34,16 @@ function stripSensitive(value, depth = 0) {
   return out;
 }
 
-function format(context, err, extra) {
+type Formatted = {
+  context: string;
+  err: unknown;
+  extra?: unknown;
+  timestamp: string;
+};
+
+function format(context: string, err: unknown, extra?: unknown): Formatted {
   const safeErr = err instanceof Error
-    ? { name: err.name, message: err.message, code: err.code, stack: err.stack }
+    ? { name: err.name, message: err.message, code: (err as { code?: unknown }).code, stack: err.stack }
     : err;
   return {
     context,
@@ -59,13 +66,16 @@ export const logger = {
    * `@sentry/react-native` is not loaded (tests, web preview, etc.)
    * without each test having to mock the module.
    */
-  logError(context, err, extra) {
+  logError(context: string, err: unknown, extra?: unknown): void {
     try {
       const payload = format(context, err, extra);
       // Single-line summary + serialized payload for grep-ability.
       // Keep this on one line in dev so React Native's log viewer
       // doesn't truncate the stack.
-      console.warn(`[${context}]`, payload.err?.message || String(payload.err), payload);
+      const errSummary = (typeof payload.err === 'object' && payload.err && 'message' in payload.err)
+        ? (payload.err as { message?: string }).message
+        : String(payload.err);
+      console.warn(`[${context}]`, errSummary || '', payload);
 
       // Sentry forward — guarded so a missing package or broken
       // native module never throws. `Sentry` is null when:
@@ -92,7 +102,7 @@ export const logger = {
    * see (e.g. a Firestore listener denied, a snapshot that fell
    * back to a default).
    */
-  logWarning(context, message, extra) {
+  logWarning(context: string, message: string, extra?: unknown): void {
     try {
       const payload = format(context, new Error(message), extra);
       console.warn(`[${context}] ${message}`, payload);
@@ -107,7 +117,7 @@ export const logger = {
    * console.warn level used elsewhere is for things the dev
    * should notice.
    */
-  logInfo(context, message, extra) {
+  logInfo(context: string, message: string, extra?: unknown): void {
     try {
       console.log(`[${context}] ${message}`, extra || '');
     } catch {

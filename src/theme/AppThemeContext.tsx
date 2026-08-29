@@ -4,7 +4,38 @@ import { createContext, useContext } from 'react';
 // Primary is the same in both modes (burnt orange #EA580C) so the brand
 // reads identically regardless of theme choice.
 
-export const palettes = {
+export type ThemeMode = 'dark' | 'light';
+
+export type ThemePalette = {
+  mode: ThemeMode;
+  background: string;
+  backgroundAlt: string;
+  surface: string;
+  surfaceRaised: string;
+  primary: string;
+  primaryDark: string;
+  primarySoft: string;
+  primaryText: string;
+  text: string;
+  textInverse: string;
+  muted: string;
+  border: string;
+  borderStrong: string;
+  success: string;
+  successSoft: string;
+  danger: string;
+  dangerSoft: string;
+  warning: string;
+  warningSoft: string;
+  shadow: string;
+  overlay: string;
+  tabBar: string;
+  tabBarBorder: string;
+  tabBarActive: string;
+  tabBarInactive: string;
+};
+
+export const palettes: Record<ThemeMode, ThemePalette> = {
   dark: {
     mode: 'dark',
     // Surfaces
@@ -70,12 +101,18 @@ export const palettes = {
   },
 };
 
-export const AppThemeContext = createContext({
+export type AppThemeValue = {
+  theme: ThemePalette;
+  themeName: ThemeMode;
+  toggleTheme: () => void;
+};
+
+export const AppThemeContext = createContext<AppThemeValue>({
   theme: palettes.dark,
   themeName: 'dark',
   toggleTheme: () => {},
 });
 
-export function useAppTheme() {
+export function useAppTheme(): AppThemeValue {
   return useContext(AppThemeContext);
 }

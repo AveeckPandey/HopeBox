@@ -2,16 +2,31 @@
 // Extracted from PrintQR.js so designers can iterate without touching
 // component logic.
 
-import { flattenContents } from '../services/inventoryMath';
+import { flattenContents } from '../services/boxLines';
+
+type CommodityMeta = { name?: string; unit?: string };
+type CommoditiesLookup = Record<string, CommodityMeta | undefined>;
+
+import type { ContentsMap } from '../services/boxLines';
+
+type ItemLike = {
+  id: string;
+  contents?: ContentsMap;
+  rice?: number | string | null;
+  dal?: number | string | null;
+  sachets?: number | string | null;
+  category?: string;
+  donorName?: string;
+};
 
 // Render a "Name: qty unit" row for each line on the box. Falls back
 // to the legacy top-level fields if `contents` is missing (boxes
 // written by v1.0). We accept a `commodities` lookup so the template
 // can show the friendly name + unit instead of a raw commodityId.
-function renderContentsRows(item, commodities) {
-  const lines = [];
+function renderContentsRows(item: ItemLike, commodities: CommoditiesLookup): string {
+  const lines: string[] = [];
   if (item.contents && Object.keys(item.contents).length > 0) {
-    const flat = flattenContents(item.contents);
+    const flat = flattenContents(item.contents as ContentsMap);
     for (const [cid, qty] of Object.entries(flat)) {
       if (!qty) continue;
       const meta = commodities?.[cid];
@@ -28,7 +43,7 @@ function renderContentsRows(item, commodities) {
   return lines.join('\n            ');
 }
 
-function escapeHtml(str) {
+function escapeHtml(str: unknown): string {
   return String(str)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -37,7 +52,7 @@ function escapeHtml(str) {
     .replace(/'/g, '&#39;');
 }
 
-export function buildPrintLabelHtml(item, qrDataUrl, commodities = {}) {
+export function buildPrintLabelHtml(item: ItemLike, qrDataUrl: string, commodities: CommoditiesLookup = {}): string {
   return `
     <html>
       <body style="font-family: Arial, sans-serif; padding: 24px; color: #111827;">

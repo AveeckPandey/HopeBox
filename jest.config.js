@@ -5,10 +5,10 @@ module.exports = {
   testMatch: ['**/__tests__/**/*.test.js'],
   testEnvironment: 'node',
   transform: {
-    '^.+\\.js$': 'babel-jest',
+    '^.+\\.[jt]sx?$': 'babel-jest',
   },
 transformIgnorePatterns: [
     'node_modules/(?!(?:.pnpm/)?(react-native|@react-native|@react-navigation|expo|@expo/.*|@expo-google-fonts/.*|react-clone-referenced-element|@sentry/.*|sentry-expo|native-base|react-native-svg|expo-constants|expo-modules-core|expo-file-system|expo-linking|expo-application|expo-asset))',
   ],
-  moduleFileExtensions: ['js', 'json'],
+  moduleFileExtensions: ['js', 'ts', 'json'],
 };

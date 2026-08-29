@@ -34,6 +34,23 @@ import { firestoreOnError } from '../hooks/useFirestoreSubscription';
 // `category` is a free-form string; the suggested enum is above. The UI filters
 // by it on the Admin screen.
 
+export type Commodity = {
+  id?: string;
+  name: string;
+  unit: string;
+  icon: string;
+  color: string;
+  category: string;
+  defaultPerBox: number;
+  required: boolean;
+  sortOrder: number;
+  expiryTracking: boolean;
+  batchTracking: boolean;
+  unitConversion?: Record<string, number>;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+};
+
 const COLLECTION = 'commodities';
 
 // Default commodity set seeded for new organizations. The IDs are stable
@@ -145,12 +162,12 @@ export const DEFAULT_COMMODITIES = [
 ];
 
 // Subscribe to the full commodity list. Sorted by sortOrder then name.
-export function subscribeCommodities(callback) {
+export function subscribeCommodities(callback: (items: Commodity[]) => void): () => void {
   const q = query(collection(db, COLLECTION), orderBy('sortOrder', 'asc'));
   return onSnapshot(
     q,
     (snapshot) => {
-      const items = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const items = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as Commodity));
       callback(items);
     },
     (err) => {
@@ -165,14 +182,14 @@ export function subscribeCommodities(callback) {
 
 // One-shot fetch — used by the admin screen when checking
 // "is this commodity referenced by any box?" before delete.
-export async function fetchCommodities() {
+export async function fetchCommodities(): Promise<Commodity[]> {
   const snap = await getDocs(collection(db, COLLECTION));
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as Commodity));
 }
 
 // Create or update a commodity. `id` is optional — if missing, a new
 // document is created with a Firestore-generated id.
-export async function saveCommodity(commodity, id = null) {
+export async function saveCommodity(commodity: Partial<Commodity>, id: string | null = null): Promise<string> {
   const payload = sanitizeCommodity(commodity);
   if (id) {
     const ref = doc(db, COLLECTION, id);
@@ -190,14 +207,14 @@ export async function saveCommodity(commodity, id = null) {
 // Delete a commodity. Returns true on success. Caller is responsible
 // for the "is it referenced?" check (FR-COMM-4) — this service layer
 // doesn't reach into boxes to verify.
-export async function deleteCommodity(id) {
+export async function deleteCommodity(id: string): Promise<void> {
   await setDoc(doc(db, COLLECTION, id), { _deleted: true, updatedAt: serverTimestamp() }, { merge: true });
   // Hard-delete is left to admin tools; soft-delete keeps audit history.
 }
 
 // Seed the default commodity set for a fresh org. Idempotent: only
 // creates documents that don't already exist (matches by id).
-export async function seedDefaultCommoditiesIfEmpty() {
+export async function seedDefaultCommoditiesIfEmpty(): Promise<void> {
   const existing = await fetchCommodities();
   const existingIds = new Set(existing.map((c) => c.id));
   for (const c of DEFAULT_COMMODITIES) {
@@ -223,7 +240,7 @@ export async function seedDefaultCommoditiesIfEmpty() {
 // Strip unknown fields, apply defaults, coerce numbers. Keeps the
 // service boundary tight: callers can pass UI-shaped data and we
 // return a Firestore-shaped record.
-function sanitizeCommodity(input) {
+function sanitizeCommodity(input: Partial<Commodity>) {
   return {
     name: String(input.name || '').trim(),
     unit: String(input.unit || 'unit').trim(),
@@ -239,16 +256,16 @@ function sanitizeCommodity(input) {
 }
 
 // Convenience: is this commodity a medical/pharma one?
-export function isMedical(commodity) {
-  return commodity && (commodity.category === 'medical' || commodity.category === 'therapeutic');
+export function isMedical(commodity: Commodity | null | undefined): boolean {
+  return Boolean(commodity && (commodity.category === 'medical' || commodity.category === 'therapeutic'));
 }
 
 // Convenience: does this commodity require expiry date when filling
 // a box line? Used by AddBox/EditBox for per-line validation.
-export function needsExpiry(commodity) {
+export function needsExpiry(commodity: Commodity | null | undefined): boolean {
   return Boolean(commodity && commodity.expiryTracking);
 }
-export function needsBatch(commodity) {
+export function needsBatch(commodity: Commodity | null | undefined): boolean {
   return Boolean(commodity && commodity.batchTracking);
 }
 
@@ -258,8 +275,8 @@ export function needsBatch(commodity) {
 // shipped glyphmap. That makes a typo (e.g. 'soap') invisible in
 // the UI but very loud in the console. We cache the glyphmap at
 // module load and route unknown names to a neutral fallback.
-let mciGlyphs = null;
-let mciLoading = null;
+let mciGlyphs: Record<string, unknown> | null = null;
+let mciLoading: Promise<Record<string, unknown>> | null = null;
 
 async function loadGlyphMap() {
   if (mciGlyphs) return mciGlyphs;
@@ -290,7 +307,7 @@ export const FALLBACK_ICON = 'package-variant';
 // Returns `icon` if it is a known MaterialCommunityIcons name, else
 // FALLBACK_ICON. Synchronous fast-path: if the map is already loaded
 // (e.g. after the first render), this is a single object lookup.
-export function safeIcon(icon) {
+export function safeIcon(icon: string | null | undefined): string {
   if (!icon) return FALLBACK_ICON;
   if (!mciGlyphs) {
     // Kick off the load; meanwhile be permissive. Subsequent renders

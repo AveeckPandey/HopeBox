@@ -19,7 +19,7 @@ import { firestoreOnError } from "../hooks/useFirestoreSubscription";
 // We require `action` to be a non-empty string. Empty actions were
 // silently dropped in the previous version, but the schema was
 // still letting them through.
-export const logAction = async (action, details = {}, userId = null) => {
+export const logAction = async (action: string, details: Record<string, unknown> = {}, userId: string | null = null): Promise<void> => {
   if (!action || typeof action !== "string") {
     logger.logWarning("audit/logAction", "missing action string", { actionType: typeof action });
     return;
@@ -37,7 +37,15 @@ export const logAction = async (action, details = {}, userId = null) => {
   }
 };
 
-export const subscribeToAuditLogs = (callback, maxLogs = 50) => {
+export type AuditLog = {
+  id: string;
+  action: string;
+  details: Record<string, unknown>;
+  userId: string;
+  timestamp: unknown;
+};
+
+export const subscribeToAuditLogs = (callback: (logs: AuditLog[]) => void, maxLogs = 50): (() => void) => {
   const q = query(
     collection(db, "auditLogs"),
     orderBy("timestamp", "desc"),
@@ -49,7 +57,7 @@ export const subscribeToAuditLogs = (callback, maxLogs = 50) => {
       const logs = snapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data()
-      }));
+      } as AuditLog));
       callback(logs);
     },
     (err) => firestoreOnError("services/audit/subscribe", err)

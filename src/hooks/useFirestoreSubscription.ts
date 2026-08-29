@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import type { Query, DocumentReference, QuerySnapshot, DocumentSnapshot } from 'firebase/firestore';
 import { onSnapshot } from 'firebase/firestore';
 import { logger } from '../services/logger';
 import { reportPermissionError } from './reportPermissionError';
@@ -30,7 +31,12 @@ import { reportPermissionError } from './reportPermissionError';
 //     app should pass as the third argument to `onSnapshot`.
 const PERMISSION_DENIED = 'permission-denied';
 
-function isPermissionDenied(err) {
+type FirestoreError = {
+  code?: string;
+  message?: string;
+};
+
+function isPermissionDenied(err: FirestoreError | null | undefined): boolean {
   // Firestore surfaces this as err.code === 'permission-denied' on
   // web and a few related strings on iOS/Android. Match all of them
   // so the banner shows for the right reason.
@@ -45,11 +51,8 @@ function isPermissionDenied(err) {
  * Mirrors the routing that `subscribeFirestore` does internally,
  * so screens that use `useEffect` + `onSnapshot` directly don't
  * have to reinvent the permission-error vs. generic-error split.
- *
- * @param {string} context  Short tag for the logger, e.g. 'Boxes'.
- * @param {Error}  err      The error from `onSnapshot`'s third arg.
  */
-export function firestoreOnError(context, err) {
+export function firestoreOnError(context: string, err: FirestoreError | null | undefined): void {
   if (!err) return;
   if (isPermissionDenied(err)) {
     reportPermissionError({ source: context, message: err.message, code: err.code });
@@ -60,20 +63,15 @@ export function firestoreOnError(context, err) {
 
 /**
  * Subscribe to a Firestore query and return the latest data.
- *
- * @param {Query|DocumentReference|null} query
- *   Firestore query or document ref. Pass `null` to skip the
- *   subscription (e.g. when a parent doc id isn't available yet).
- * @param {object} [opts]
- * @param {any} [opts.initialData]  Value to return while the first
- *   snapshot is still loading. Default: `null`.
- * @returns {{ data: any, loading: boolean, error: Error|null }}
  */
-export function useFirestoreSubscription(query, opts = {}) {
+export function useFirestoreSubscription<T = unknown>(
+  query: Query | DocumentReference | null,
+  opts: { initialData?: T | null } = {}
+): { data: T | null; loading: boolean; error: FirestoreError | null } {
   const { initialData = null } = opts;
-  const [data, setData] = useState(initialData);
+  const [data, setData] = useState<T | null>(initialData);
   const [loading, setLoading] = useState(query != null);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState<FirestoreError | null>(null);
 
   useEffect(() => {
     if (query == null) {
@@ -90,7 +88,7 @@ export function useFirestoreSubscription(query, opts = {}) {
     const unsubscribe = subscribeFirestore(
       query,
       (next) => {
-        setData(next);
+        setData(next as T | null);
         setLoading(false);
         setError(null);
       },
@@ -111,40 +109,43 @@ export function useFirestoreSubscription(query, opts = {}) {
 
 /**
  * Low-level subscribe helper. Returns the `unsubscribe` function.
- *
- * @param {Query|DocumentReference} query
- * @param {(data: any) => void} onData  Receives mapped data.
- * @param {(err: Error) => void} [onError]  Optional; if omitted, errors
- *   are routed to the permission-error emitter + logger only.
  */
-export function subscribeFirestore(query, onData, onError) {
+export function subscribeFirestore(
+  query: Query<unknown> | DocumentReference<unknown>,
+  onData: (data: unknown) => void,
+  onError?: (err: FirestoreError) => void
+): () => void {
   return onSnapshot(
-    query,
-    (snapshot) => {
+    // Cast to the union onSnapshot accepts internally. The
+    // overloads differ by listener arity; we wrap the success
+    // callback to normalize QuerySnapshot / DocumentSnapshot.
+    query as Parameters<typeof onSnapshot>[0],
+    (snapshot: unknown) => {
       // `onSnapshot` overload with two callbacks is the docs
       // recommendation; the success signature is the first.
-      onData(mapDocs(snapshot));
+      onData(mapDocs(snapshot as QuerySnapshot | DocumentSnapshot | null | undefined));
     },
-    (err) => {
+    (err: FirestoreError) => {
       if (isPermissionDenied(err)) {
         reportPermissionError({ source: 'firestore', message: err.message, code: err.code });
       } else {
-        logger.logWarning('firestore/subscribe', err.message, { code: err.code });
+        logger.logWarning('firestore/subscribe', err.message || '', { code: err.code });
       }
       if (onError) onError(err);
     }
   );
 }
 
-function mapDocs(snapshot) {
+function mapDocs(snapshot: QuerySnapshot | DocumentSnapshot | null | undefined): unknown {
   // Some callers pass a DocumentReference, which produces a
   // DocumentSnapshot (not a QuerySnapshot). Treat both uniformly.
-  if (snapshot && typeof snapshot.exists === 'boolean') {
-    if (!snapshot.exists()) return null;
-    return { id: snapshot.id, ...snapshot.data() };
+  if (snapshot && typeof (snapshot as DocumentSnapshot).exists === 'boolean') {
+    const ds = snapshot as DocumentSnapshot;
+    if (!ds.exists()) return null;
+    return { id: ds.id, ...ds.data() };
   }
-  if (snapshot && Array.isArray(snapshot.docs)) {
-    return snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+  if (snapshot && Array.isArray((snapshot as QuerySnapshot).docs)) {
+    return (snapshot as QuerySnapshot).docs.map((d) => ({ id: d.id, ...d.data() }));
   }
   return null;
 }

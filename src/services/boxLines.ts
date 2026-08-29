@@ -14,14 +14,36 @@
 // both shapes everywhere; the helpers below normalize + validate.
 
 // A line value is "flat" if it is a number; otherwise it's an object.
-export function isFlatLine(v) {
+export type BoxLineValue =
+  | number
+  | string
+  | {
+      qty?: number | string;
+      batchNumber?: string | null;
+      expiryDate?: string | null;
+      manufacturingDate?: string | null;
+      unit?: string;
+    }
+  | null
+  | undefined;
+
+export type NormalizedLine = {
+  qty: number;
+  batchNumber: string | null;
+  expiryDate: string | null;
+  manufacturingDate: string | null;
+};
+
+export type ContentsMap = Record<string, BoxLineValue>;
+
+export function isFlatLine(v: BoxLineValue): boolean {
   return typeof v === 'number';
 }
 
 // Normalize a single line value to a {qty, batchNumber, expiryDate,
 // manufacturingDate} object. If the input is a number, all optional
 // fields stay null.
-export function normalizeLine(v) {
+export function normalizeLine(v: BoxLineValue): NormalizedLine {
   if (v == null) return { qty: 0, batchNumber: null, expiryDate: null, manufacturingDate: null };
   if (typeof v === 'number' || typeof v === 'string') {
     // Firestore sometimes returns numeric fields as strings
@@ -41,14 +63,15 @@ export function normalizeLine(v) {
 }
 
 // Total qty for a commodity line, regardless of shape.
-export function lineQty(v) {
+export function lineQty(v: BoxLineValue): number {
   if (v == null) return 0;
   if (typeof v === 'number') return v;
+  if (typeof v === 'string') return Number(v) || 0;
   return Number(v.qty) || 0;
 }
 
 // Total qty across a whole contents map.
-export function totalContents(contents) {
+export function totalContents(contents: ContentsMap | null | undefined): number {
   let sum = 0;
   for (const v of Object.values(contents || {})) sum += lineQty(v);
   return sum;
@@ -56,8 +79,8 @@ export function totalContents(contents) {
 
 // Reduce a contents map to a flat `{ commodityId: qty }` map. Drops
 // the batch/expiry metadata. Used for inventory math and exports.
-export function flattenContents(contents) {
-  const out = {};
+export function flattenContents(contents: ContentsMap | null | undefined): Record<string, number> {
+  const out: Record<string, number> = {};
   for (const [k, v] of Object.entries(contents || {})) {
     out[k] = lineQty(v);
   }
@@ -72,10 +95,14 @@ export function flattenContents(contents) {
 //
 // `strict: true` requires every required commodity to have qty > 0.
 // `strict: false` only checks for malformed shapes.
-export function validateContents(contents, commodities, { strict = true } = {}) {
-  const errors = [];
+export function validateContents(
+  contents: ContentsMap,
+  commodities: Array<{ id: string; name: string; expiryTracking?: boolean; batchTracking?: boolean; required?: boolean }>,
+  { strict = true }: { strict?: boolean } = {}
+): string[] {
+  const errors: string[] = [];
   const map = contents || {};
-  const byId = {};
+  const byId: Record<string, { id: string; name: string; expiryTracking?: boolean; batchTracking?: boolean; required?: boolean }> = {};
   for (const c of commodities || []) byId[c.id] = c;
 
   for (const [commodityId, raw] of Object.entries(map)) {

@@ -15,14 +15,22 @@
 // dependencies, so it can be imported from services/ or contexts/
 // without dragging the rest of the app's tree along.
 
-const listeners = new Set();
+export type PermissionErrorEvent = {
+  source: string;
+  message?: string;
+  code?: string;
+  at: number;
+};
+
+type Listener = (event: PermissionErrorEvent) => void;
+const listeners = new Set<Listener>();
 
 // Coalesce identical permission errors for this many ms. Prevents
 // the banner from re-flickering when several listeners fail in
 // rapid succession.
-let lastEvent = null;
+let lastEvent: PermissionErrorEvent | null = null;
 
-function emit(event) {
+function emit(event: PermissionErrorEvent): void {
   if (lastEvent && lastEvent.message === event.message) {
     // Same message as the last emission; update the timestamp but
     // skip notifying listeners — banner is already showing.
@@ -39,11 +47,11 @@ function emit(event) {
   }
 }
 
-export function reportPermissionError(event) {
-  emit({ source: 'unknown', ...event, at: Date.now() });
+export function reportPermissionError(event: Omit<PermissionErrorEvent, 'source' | 'at'> & { source?: string }): void {
+  emit({ source: 'unknown', at: Date.now(), ...event });
 }
 
-export function subscribeToPermissionErrors(fn) {
+export function subscribeToPermissionErrors(fn: Listener): () => boolean {
   listeners.add(fn);
   return () => listeners.delete(fn);
 }
@@ -53,6 +61,6 @@ export function subscribeToPermissionErrors(fn) {
  * a snapshot succeeds so the next failure isn't deduped against a
  * stale event.
  */
-export function acknowledgePermissionError() {
+export function acknowledgePermissionError(): void {
   lastEvent = null;
 }

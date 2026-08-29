@@ -42,12 +42,22 @@ export const DEFAULT_TEMPLATE = {
 };
 
 // Subscribe to all templates.
-export function subscribeTemplates(callback) {
+export type BoxTemplate = {
+  id?: string;
+  name: string;
+  program: string;
+  default: boolean;
+  commodities: Record<string, number>;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+};
+
+export function subscribeTemplates(callback: (items: BoxTemplate[]) => void): () => void {
   const q = query(collection(db, COLLECTION), orderBy('name', 'asc'));
   return onSnapshot(
     q,
     (snapshot) => {
-      callback(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
+      callback(snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as BoxTemplate)));
     },
     (err) => {
       firestoreOnError('services/boxTemplates/subscribe', err);
@@ -59,12 +69,12 @@ export function subscribeTemplates(callback) {
   );
 }
 
-export async function fetchTemplates() {
+export async function fetchTemplates(): Promise<BoxTemplate[]> {
   const snap = await getDocs(collection(db, COLLECTION));
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as BoxTemplate));
 }
 
-export async function saveTemplate(template, id = null) {
+export async function saveTemplate(template: Partial<BoxTemplate>, id: string | null = null): Promise<string> {
   const payload = {
     name: String(template.name || 'Untitled template').trim(),
     program: String(template.program || 'general').trim(),
@@ -83,12 +93,12 @@ export async function saveTemplate(template, id = null) {
   return ref.id;
 }
 
-export async function deleteTemplate(id) {
+export async function deleteTemplate(id: string): Promise<void> {
   // Same soft-delete approach as commodities — keeps history.
   await setDoc(doc(db, COLLECTION, id), { _deleted: true, updatedAt: serverTimestamp() }, { merge: true });
 }
 
-export async function seedDefaultTemplateIfEmpty() {
+export async function seedDefaultTemplateIfEmpty(): Promise<void> {
   const existing = await fetchTemplates();
   if (existing.length > 0) return;
   await setDoc(doc(db, COLLECTION, DEFAULT_TEMPLATE_ID), {
@@ -101,8 +111,8 @@ export async function seedDefaultTemplateIfEmpty() {
   });
 }
 
-function sanitizeCommodityMap(map) {
-  const out = {};
+function sanitizeCommodityMap(map: Record<string, number | string> | null | undefined): Record<string, number> {
+  const out: Record<string, number> = {};
   Object.entries(map || {}).forEach(([k, v]) => {
     const n = Number(v);
     if (Number.isFinite(n) && n > 0) out[k] = n;
