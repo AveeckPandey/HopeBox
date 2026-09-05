@@ -341,194 +341,181 @@ export default function Dashboard({ navigation }) {
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         <View style={styles.contentWrap}>
           <FadeInUp delay={0}>
-            <SurfaceCard tone="raised" padding={spacing.lg} style={styles.heroCard}>
-              <ScreenHeader
-                eyebrow={t.eyebrow}
-                title={t.title}
-                subtitle={t.subtitle}
-                style={{ marginBottom: 0 }}
-              />
-              <View style={styles.heroActionsRow}>{heroRight}</View>
-              {userData ? (
-                <View style={[styles.roleBadge, { backgroundColor: theme.primarySoft, borderColor: theme.primary }]}>
-                  <Text style={[styles.roleBadgeText, { color: theme.primary }]}>
-                    {userData.role?.toUpperCase() || 'STAFF'}
+            <View style={styles.topHeaderRow}>
+              <View style={styles.titleTextWrap}>
+                <Text style={styles.dashboardHeading}>{t.title}</Text>
+                {userData ? (
+                  <View style={[styles.roleBadge, { backgroundColor: theme.primarySoft, borderColor: theme.primary }]}>
+                    <Text style={[styles.roleBadgeText, { color: theme.primary }]}>
+                      {userData.role?.toUpperCase() || 'STAFF'}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+              <View style={styles.headerIconButtonRow}>
+                <Pressable
+                  onPress={() => navigation.navigate('Settings')}
+                  accessibilityRole="button"
+                  accessibilityLabel="Settings"
+                  style={({ pressed }) => [styles.headerIconButton, { backgroundColor: theme.surfaceRaised, borderColor: theme.border }, pressed && { opacity: 0.7 }]}
+                >
+                  <MaterialCommunityIcons name="cog-outline" size={20} color={theme.text} />
+                </Pressable>
+              </View>
+            </View>
+          </FadeInUp>
+
+          {/* Contextual Low Stock Alert Card */}
+          {chartData.some((c) => c.shortage > 0) ? (
+            <FadeInUp delay={40}>
+              <View style={[styles.alertCard, { backgroundColor: theme.warningSoft || 'rgba(251,191,36,0.12)', borderColor: theme.warning }]}>
+                <MaterialCommunityIcons name="alert-outline" size={22} color={theme.warning} style={styles.alertIcon} />
+                <View style={styles.alertTextWrap}>
+                  <Text style={[styles.alertTitle, { color: theme.warning }]}>Low Stock Alert</Text>
+                  <Text style={[styles.alertBody, { color: theme.text }]}>
+                    {chartData.filter((c) => c.shortage > 0).map((c) => `${c.label} is below target`).join(', ')}. Consider restocking before the next deployment campaign.
                   </Text>
                 </View>
-              ) : null}
-              <View style={[styles.heroStats, { backgroundColor: theme.surfaceRaised, borderColor: theme.border }]}>
-                <View style={styles.heroStat}>
-                  <Text style={[styles.heroStatValue, { color: theme.text }]} numberOfLines={1} adjustsFontSizeToFit>
-                    {possibleBoxes}
-                  </Text>
-                  <Text style={[styles.heroStatLabel, { color: theme.muted }]} numberOfLines={2}>
-                    {t.possibleBoxes}
+              </View>
+            </FadeInUp>
+          ) : null}
+
+          {/* Campaign Readiness Card */}
+          <FadeInUp delay={80}>
+            <SurfaceCard padding={spacing.lg}>
+              <Text style={[styles.cardSectionEyebrow, { color: theme.muted }]}>CAMPAIGN READINESS</Text>
+              <View style={styles.readinessStatRow}>
+                <View style={[styles.readinessStatBox, { backgroundColor: theme.backgroundAlt }]}>
+                  <Text style={[styles.readinessStatLabel, { color: theme.muted }]}>Possible Boxes</Text>
+                  <Text style={[styles.readinessStatNum, { color: theme.text }]}>{possibleBoxes}</Text>
+                  <Text style={[styles.readinessStatSub, { color: theme.muted }]}>Based on stock</Text>
+                </View>
+                <View style={[styles.readinessStatBox, { backgroundColor: theme.backgroundAlt }]}>
+                  <Text style={[styles.readinessStatLabel, { color: theme.muted }]}>Deployed</Text>
+                  <Text style={[styles.readinessStatNum, { color: theme.success }]}>{counts.dispatched}</Text>
+                  <Text style={[styles.readinessStatSub, { color: theme.muted }]}>This campaign</Text>
+                </View>
+              </View>
+
+              <View style={styles.targetProgressBlock}>
+                <View style={styles.targetProgressHeader}>
+                  <Text style={[styles.targetProgressTitle, { color: theme.text }]}>Target coverage</Text>
+                  <Text style={[styles.targetProgressPercent, { color: theme.warning }]}>
+                    {Math.round(completionRate)}% <Text style={[styles.targetProgressSubText, { color: theme.muted }]}>({possibleBoxes} of {targetNum || 100} HH)</Text>
                   </Text>
                 </View>
-                <View style={[styles.heroStatDivider, { backgroundColor: theme.border }]} />
-                <View style={styles.heroStat}>
-                  <Text style={[styles.heroStatValue, { color: theme.text }]} numberOfLines={1} adjustsFontSizeToFit>
-                    {boxes.length}
-                  </Text>
-                  <Text style={[styles.heroStatLabel, { color: theme.muted }]} numberOfLines={2}>
-                    {t.totalBoxes}
-                  </Text>
-                </View>
-                <View style={[styles.heroStatDivider, { backgroundColor: theme.border }]} />
-                <View style={styles.heroStat}>
-                  <Text style={[styles.heroStatValue, { color: theme.primary }]} numberOfLines={1} adjustsFontSizeToFit>
-                    {Math.round(completionRate)}%
-                  </Text>
-                  <Text style={[styles.heroStatLabel, { color: theme.muted }]} numberOfLines={2}>
-                    {t.targetCoverage}
-                  </Text>
+                <View style={[styles.targetProgressBarTrack, { backgroundColor: theme.backgroundAlt }]}>
+                  <View
+                    style={[
+                      styles.targetProgressBarFill,
+                      { width: `${Math.min(completionRate, 100)}%`, backgroundColor: theme.primary },
+                    ]}
+                  />
                 </View>
               </View>
             </SurfaceCard>
           </FadeInUp>
 
-          <FadeInUp delay={80}>
-            <SurfaceCard>
-              <Text style={[styles.sectionTitle, { color: theme.text }]}>{t.liveInventory}</Text>
+          {/* Live Inventory Status Bars */}
+          <FadeInUp delay={140}>
+            <SurfaceCard padding={spacing.lg}>
+              <Text style={[styles.cardSectionEyebrow, { color: theme.muted }]}>LIVE INVENTORY</Text>
               {chartData.length === 0 ? (
-                <Text style={[styles.empty, { color: theme.muted }]}>
-                  {t.emptyChart}
-                </Text>
+                <Text style={[styles.empty, { color: theme.muted }]}>{t.emptyChart}</Text>
               ) : (
-                <View style={styles.metricGrid}>
-                  {chartData.map((item) => (
-                    <MetricTile
-                      key={item.id}
-                      label={item.label}
-                      value={item.value}
-                      unit={item.unit}
-                      tone={item.shortage > 0 ? 'warning' : 'primary'}
-                    />
-                  ))}
+                <View style={styles.inventoryList}>
+                  {chartData.map((item) => {
+                    const statusColor = item.shortage > 0 ? (theme.warning || '#FBBF24') : (theme.success || '#10B981');
+                    const statusLabel = item.shortage > 0 ? '↓ low' : 'healthy';
+                    return (
+                      <View key={item.id} style={styles.inventoryRow}>
+                        <View style={styles.inventoryHeader}>
+                          <View style={styles.inventoryNameRow}>
+                            <View style={[styles.legendDot, { backgroundColor: statusColor }]} />
+                            <Text style={[styles.inventoryName, { color: theme.text }]}>{item.label}</Text>
+                          </View>
+                          <Text style={[styles.inventoryValue, { color: theme.text }]}>
+                            {item.value.toLocaleString()} {item.unit} <Text style={{ color: statusColor, fontSize: 12 }}>{statusLabel}</Text>
+                          </Text>
+                        </View>
+                        <View style={[styles.chartTrack, { backgroundColor: theme.backgroundAlt }]}>
+                          <View
+                            style={[
+                              styles.chartBar,
+                              {
+                                width: `${Math.max((item.value / maxChartValue) * 100, item.value > 0 ? 8 : 0)}%`,
+                                backgroundColor: statusColor,
+                              },
+                            ]}
+                          />
+                        </View>
+                      </View>
+                    );
+                  })}
+
+                  <View style={styles.legendRow}>
+                    <View style={styles.legendItem}>
+                      <View style={[styles.legendDot, { backgroundColor: theme.warning || '#FBBF24' }]} />
+                      <Text style={[styles.legendText, { color: theme.muted }]}>Low (&lt;50%)</Text>
+                    </View>
+                    <View style={styles.legendItem}>
+                      <View style={[styles.legendDot, { backgroundColor: theme.success || '#10B981' }]} />
+                      <Text style={[styles.legendText, { color: theme.muted }]}>Healthy</Text>
+                    </View>
+                    <View style={styles.legendItem}>
+                      <View style={[styles.legendDot, { backgroundColor: theme.primary }]} />
+                      <Text style={[styles.legendText, { color: theme.muted }]}>Tracked</Text>
+                    </View>
+                  </View>
                 </View>
               )}
             </SurfaceCard>
           </FadeInUp>
 
-          <FadeInUp delay={140}>
-            <SurfaceCard>
-              <Text style={[styles.sectionTitle, { color: theme.text }]}>{t.inventoryChart}</Text>
-              {chartData.map((item) => (
-                <View key={item.id} style={styles.chartRow}>
-                  <View style={styles.chartHeader}>
-                    <Text style={[styles.chartLabel, { color: theme.text }]}>{item.label}</Text>
-                    <Text style={[styles.chartValue, { color: theme.muted }]}>
-                      {item.value} {item.unit}
-                    </Text>
-                  </View>
-                  <View style={[styles.chartTrack, { backgroundColor: theme.backgroundAlt }]}>
-                    <View
-                      style={[
-                        styles.chartBar,
-                        {
-                          width: `${Math.max((item.value / maxChartValue) * 100, item.value > 0 ? 10 : 0)}%`,
-                          backgroundColor: item.color,
-                        },
-                      ]}
-                    />
-                  </View>
-                </View>
-              ))}
-            </SurfaceCard>
-          </FadeInUp>
-
-          {fefoAlerts.length > 0 ? (
-            <FadeInUp delay={180}>
-              <SurfaceCard>
-                <Text style={[styles.sectionTitle, { color: theme.text }]}>Expiring soon</Text>
-                <Text style={[styles.helper, { color: theme.muted }]}>
-                  First-expiry-first-out (FEFO) preview across this warehouse.
-                </Text>
-                {fefoAlerts.map((alert) => (
-                  <View
-                    key={`${alert.commodity.id}-${alert.boxId}`}
-                    style={[styles.fefoRow, { borderColor: theme.border, backgroundColor: theme.surfaceRaised }]}
-                  >
-                    <View style={[styles.fefoIcon, { backgroundColor: alert.commodity.color || theme.warning }]}>
-                      <MaterialCommunityIcons
-                        name={safeIcon(alert.commodity.icon) as any}
-                        size={16}
-                        color={theme.primaryText}
-                      />
-                    </View>
-                    <View style={styles.fefoText}>
-                      <Text style={[styles.fefoName, { color: theme.text }]}>
-                        {alert.commodity.name}
-                      </Text>
-                      <Text style={[styles.fefoMeta, { color: theme.muted }]}>
-                        Box {alert.boxId} · expires {alert.expiry}
-                        {alert.batch ? ` · batch ${alert.batch}` : ''}
-                      </Text>
-                    </View>
-                  </View>
-                ))}
-              </SurfaceCard>
-            </FadeInUp>
-          ) : null}
-
+          {/* Quick Actions 2x2 Grid */}
           <FadeInUp delay={200}>
-            <SurfaceCard>
-              <Text style={[styles.sectionTitle, { color: theme.text }]}>{t.boxStatus}</Text>
-              <View style={styles.statusGrid}>
-                {statusRows.map((row) => (
-                  <View
-                    key={row.status}
-                    style={[styles.statusRow, { backgroundColor: theme.surfaceRaised, borderColor: theme.border }]}
-                  >
-                    <StatusBadge status={row.status} size="sm" />
-                    <Text style={[styles.statusCount, { color: theme.text }]}>{row.count}</Text>
-                  </View>
-                ))}
-              </View>
-            </SurfaceCard>
-          </FadeInUp>
+            <SurfaceCard padding={spacing.lg}>
+              <Text style={[styles.cardSectionEyebrow, { color: theme.muted }]}>QUICK ACTIONS</Text>
+              <View style={styles.quickGrid2x2}>
+                <Pressable
+                  onPress={goBoxes}
+                  accessibilityRole="button"
+                  accessibilityLabel="Manage boxes"
+                  style={({ pressed }) => [styles.quickTile, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }, pressed && { opacity: 0.8 }]}
+                >
+                  <MaterialCommunityIcons name="package-variant-closed" size={26} color={theme.primary} />
+                  <Text style={[styles.quickTileText, { color: theme.text }]}>Manage boxes</Text>
+                </Pressable>
 
-          <FadeInUp delay={260}>
-            <SurfaceCard>
-              <Text style={[styles.sectionTitle, { color: theme.text }]}>{t.targetPlanning}</Text>
-              <Text style={[styles.helper, { color: theme.muted }]}>{t.targetHelper}</Text>
-              <ThemedTargetInput
-                value={targetBoxes}
-                onChange={setTargetBoxes}
-                theme={theme}
-                styles={styles}
-              />
-              {chartData.length > 0 ? (
-                <View style={styles.requirementGrid}>
-                  {chartData.map((item) => (
-                    <MetricTile
-                      key={item.id}
-                      label={item.label}
-                      value={item.shortage}
-                      unit={item.unit}
-                      tone={item.shortage > 0 ? 'warning' : 'success'}
-                    />
-                  ))}
-                </View>
-              ) : null}
-            </SurfaceCard>
-          </FadeInUp>
+                <Pressable
+                  onPress={goScan}
+                  accessibilityRole="button"
+                  accessibilityLabel="Scan box"
+                  style={({ pressed }) => [styles.quickTile, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }, pressed && { opacity: 0.8 }]}
+                >
+                  <MaterialCommunityIcons name="qrcode-scan" size={26} color={theme.primary} />
+                  <Text style={[styles.quickTileText, { color: theme.text }]}>Scan box</Text>
+                </Pressable>
 
-          <FadeInUp delay={320}>
-            <SurfaceCard>
-              <Text style={[styles.sectionTitle, { color: theme.text }]}>{t.actions}</Text>
-              <View style={styles.actionGrid}>
-                {actionTiles.map((tile) => (
-                  <ActionTile
-                    key={tile.key}
-                    theme={theme}
-                    icon={tile.icon}
-                    label={tile.label}
-                    onPress={tile.onPress}
-                    primary={tile.primary}
-                    minHeight={styles.actionMinHeight}
-                  />
-                ))}
+                <Pressable
+                  onPress={goAnalytics}
+                  accessibilityRole="button"
+                  accessibilityLabel="Analytics"
+                  style={({ pressed }) => [styles.quickTile, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }, pressed && { opacity: 0.8 }]}
+                >
+                  <MaterialCommunityIcons name="chart-bar" size={26} color={theme.primary} />
+                  <Text style={[styles.quickTileText, { color: theme.text }]}>Analytics</Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={actionTiles.find((t) => t.key === 'csv')?.onPress}
+                  accessibilityRole="button"
+                  accessibilityLabel="Export report"
+                  style={({ pressed }) => [styles.quickTile, { backgroundColor: theme.backgroundAlt, borderColor: theme.border }, pressed && { opacity: 0.8 }]}
+                >
+                  <MaterialCommunityIcons name="file-export-outline" size={26} color={theme.primary} />
+                  <Text style={[styles.quickTileText, { color: theme.text }]}>Export report</Text>
+                </Pressable>
               </View>
             </SurfaceCard>
           </FadeInUp>
@@ -627,6 +614,184 @@ function createStyles(theme, simpleScale = 1) {
       paddingBottom: spacing.md,
       gap: spacing.md,
     },
+    topHeaderRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: spacing.xs,
+    },
+    titleTextWrap: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+    },
+    dashboardHeading: {
+      fontSize: 32,
+      fontWeight: '800',
+      color: theme.text,
+      letterSpacing: -0.5,
+    },
+    headerIconButtonRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs,
+    },
+    headerIconButton: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      borderWidth: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    cardSectionEyebrow: {
+      ...type.eyebrow,
+      marginBottom: spacing.md,
+      letterSpacing: 1.5,
+    },
+    alertCard: {
+      flexDirection: 'row',
+      padding: spacing.md,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      gap: spacing.md,
+      alignItems: 'flex-start',
+    },
+    alertIcon: {
+      marginTop: 2,
+    },
+    alertTextWrap: {
+      flex: 1,
+    },
+    alertTitle: {
+      ...type.bodyStrong,
+      fontSize: 14,
+      marginBottom: 2,
+    },
+    alertBody: {
+      ...type.caption,
+      fontSize: 13,
+      lineHeight: 18,
+    },
+    readinessStatRow: {
+      flexDirection: 'row',
+      gap: spacing.md,
+      marginBottom: spacing.md,
+    },
+    readinessStatBox: {
+      flex: 1,
+      padding: spacing.md,
+      borderRadius: radius.md,
+    },
+    readinessStatLabel: {
+      ...type.caption,
+      fontSize: 12,
+      marginBottom: 4,
+    },
+    readinessStatNum: {
+      fontSize: 28,
+      fontWeight: '800',
+      lineHeight: 34,
+    },
+    readinessStatSub: {
+      ...type.caption,
+      fontSize: 11,
+      marginTop: 2,
+    },
+    targetProgressBlock: {
+      marginTop: spacing.xs,
+    },
+    targetProgressHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'baseline',
+      marginBottom: spacing.xs,
+    },
+    targetProgressTitle: {
+      ...type.bodyStrong,
+      fontSize: 14,
+    },
+    targetProgressPercent: {
+      ...type.bodyStrong,
+      fontSize: 14,
+    },
+    targetProgressSubText: {
+      fontWeight: '400',
+      fontSize: 12,
+    },
+    targetProgressBarTrack: {
+      height: 10,
+      borderRadius: radius.pill,
+      overflow: 'hidden',
+    },
+    targetProgressBarFill: {
+      height: '100%',
+      borderRadius: radius.pill,
+    },
+    inventoryList: {
+      gap: spacing.md,
+    },
+    inventoryRow: {},
+    inventoryHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 6,
+    },
+    inventoryNameRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs,
+    },
+    inventoryName: {
+      ...type.bodyStrong,
+    },
+    inventoryValue: {
+      ...type.bodyStrong,
+      fontSize: 14,
+    },
+    legendRow: {
+      flexDirection: 'row',
+      gap: spacing.lg,
+      marginTop: spacing.sm,
+      paddingTop: spacing.sm,
+      borderTopWidth: 1,
+      borderTopColor: theme.border,
+    },
+    legendItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    legendDot: {
+      width: 10,
+      height: 10,
+      borderRadius: 5,
+    },
+    legendText: {
+      ...type.caption,
+      fontSize: 11,
+    },
+    quickGrid2x2: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: spacing.md,
+    },
+    quickTile: {
+      width: '47.5%',
+      minHeight: 90,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      padding: spacing.md,
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.xs,
+    },
+    quickTileText: {
+      ...type.bodyStrong,
+      fontSize: 13,
+      textAlign: 'center',
+    },
     heroCard: { marginBottom: 0 },
     heroActionsRow: {
       flexDirection: 'row',
@@ -649,15 +814,13 @@ function createStyles(theme, simpleScale = 1) {
     pillGhost: { backgroundColor: theme.surfaceRaised },
     pillText: { color: theme.primary, fontWeight: '700', fontSize: 11, letterSpacing: 1, textTransform: 'uppercase' },
     roleBadge: {
-      alignSelf: 'flex-start',
-      paddingHorizontal: spacing.md,
-      paddingVertical: 4,
+      alignSelf: 'center',
+      paddingHorizontal: spacing.sm,
+      paddingVertical: 2,
       borderRadius: radius.sm,
       borderWidth: 1,
-      marginTop: spacing.md,
-      marginBottom: spacing.lg,
     },
-    roleBadgeText: { ...type.caption, fontWeight: '800', letterSpacing: 1.5 },
+    roleBadgeText: { ...type.caption, fontSize: 10, fontWeight: '800', letterSpacing: 1 },
     heroStats: {
       flexDirection: 'row',
       borderRadius: radius.lg,
@@ -676,7 +839,7 @@ function createStyles(theme, simpleScale = 1) {
     chartHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: spacing.xs },
     chartLabel: { ...type.bodyStrong },
     chartValue: { ...type.caption, fontWeight: '700' },
-    chartTrack: { height: 12, borderRadius: radius.pill, overflow: 'hidden' },
+    chartTrack: { height: 10, borderRadius: radius.pill, overflow: 'hidden' },
     chartBar: { height: '100%', borderRadius: radius.pill },
     fefoRow: {
       flexDirection: 'row',

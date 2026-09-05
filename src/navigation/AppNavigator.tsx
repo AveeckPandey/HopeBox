@@ -105,9 +105,9 @@ function MainTabs() {
         name="Home"
         component={Dashboard}
         options={{
-          title: t('dashboard.title'),
-          tabBarLabel: t('dashboard.title'),
-          tabBarIconName: 'view-dashboard-outline',
+          title: 'Home',
+          tabBarLabel: 'Home',
+          tabBarIconName: 'home-outline',
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } as any}
       />
@@ -115,8 +115,8 @@ function MainTabs() {
         name="Boxes"
         component={Boxes}
         options={{
-          title: t('boxes.title'),
-          tabBarLabel: t('boxes.title'),
+          title: 'Boxes',
+          tabBarLabel: 'Boxes',
           tabBarIconName: 'package-variant-closed',
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } as any}
@@ -125,8 +125,8 @@ function MainTabs() {
         name="Scan"
         component={ScanQR}
         options={{
-          title: t('scan.title'),
-          tabBarLabel: t('scan.title'),
+          title: 'Scan',
+          tabBarLabel: 'Scan',
           tabBarIconName: 'qrcode-scan',
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } as any}
@@ -135,8 +135,8 @@ function MainTabs() {
         name="Analytics"
         component={Analytics}
         options={{
-          title: t('analytics.title'),
-          tabBarLabel: t('analytics.title'),
+          title: 'Analytics',
+          tabBarLabel: 'Analytics',
           tabBarIconName: 'chart-bar',
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } as any}
@@ -145,8 +145,8 @@ function MainTabs() {
         name="Settings"
         component={Settings}
         options={{
-          title: t('settings.title'),
-          tabBarLabel: t('settings.title'),
+          title: 'Settings',
+          tabBarLabel: 'Settings',
           tabBarIconName: 'cog-outline',
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } as any}
