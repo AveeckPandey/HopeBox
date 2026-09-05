@@ -13,6 +13,7 @@ import { useWarehouse } from '../../contexts/WarehouseContext';
 import { useUser } from '../../contexts/UserContext';
 import { useCommodities, useTemplates } from '../../contexts/CommoditiesContext';
 import { useSimpleMode } from '../../contexts/SimpleModeContext';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   boxesByEarliestExpiry,
   chartRowsForTemplate,
@@ -42,6 +43,7 @@ export default function Dashboard({ navigation }) {
   const { commodities, byId } = useCommodities();
   const { defaultTemplate } = useTemplates();
   const { scale: simpleScale } = useSimpleMode();
+  const insets = useSafeAreaInsets();
   const { t: tAll } = useLanguage();
   const t = tAll('dashboard');
   const tCommon = tAll('common');
@@ -339,7 +341,7 @@ export default function Dashboard({ navigation }) {
     <View style={styles.screen}>
       <AmbientGlow variant="dual" />
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        <View style={styles.contentWrap}>
+        <View style={[styles.contentWrap, { paddingTop: Math.max(insets.top, spacing.md) }]}>
           <FadeInUp delay={0}>
             <View style={styles.topHeaderRow}>
               <View style={styles.titleTextWrap}>
