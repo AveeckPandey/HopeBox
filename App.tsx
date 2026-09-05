@@ -7,7 +7,7 @@ import { StatusBar } from 'expo-status-bar';
 
 import AuthNavigator from './src/navigation/AuthNavigator';
 import AppNavigator from './src/navigation/AppNavigator';
-import { AppThemeContext, palettes, type ThemeMode } from './src/theme/AppThemeContext';
+import { AppThemeContext, getPalette, type BrandPreset, type ThemeMode } from './src/theme/AppThemeContext';
 import { UserProvider, useUser } from './src/contexts/UserContext';
 import { WarehouseProvider } from './src/contexts/WarehouseContext';
 import { CommoditiesProvider } from './src/contexts/CommoditiesContext';
@@ -21,14 +21,6 @@ import SplashScreen from './src/components/SplashScreen';
 import PermissionBanner from './src/components/PermissionBanner';
 import OfflineBanner from './src/components/OfflineBanner';
 
-// P42: initialise Sentry BEFORE any other module touches it. We
-// guard on the DSN so the app still works locally without a
-// configured error reporting backend — Sentry stays inert, the
-// `if` body never runs, and every `require('@sentry/react-native')`
-// in the rest of the app returns a no-op stub.
-// `enableInExpoDevelopment: false` keeps dev logs from spamming
-// the dev's Sentry project; `tracesSampleRate: 0.1` caps perf
-// traces at 10% of sessions to keep the org's quota healthy.
 if (process.env.EXPO_PUBLIC_SENTRY_DSN) {
   try {
     const Sentry = require('@sentry/react-native');
@@ -38,27 +30,32 @@ if (process.env.EXPO_PUBLIC_SENTRY_DSN) {
       tracesSampleRate: 0.1,
     });
   } catch (err) {
-    // Sentry init failed (e.g. native module not yet linked). Don't
-    // block app startup — logger will still capture locally.
-    // eslint-disable-next-line no-console
     console.warn('[App] Sentry init skipped:', (err as Error)?.message || err);
   }
 }
 
 const THEME_KEY = 'inventory-app-theme';
+const BRAND_KEY = 'inventory-app-brand';
 
 export default function App() {
   const systemTheme = useColorScheme();
   const [themeName, setThemeName] = useState<ThemeMode>('dark');
+  const [brandPreset, setBrandPresetState] = useState<BrandPreset>('orange');
 
   useEffect(() => {
     const loadTheme = async () => {
       const storedTheme = await AsyncStorage.getItem(THEME_KEY);
+      const storedBrand = await AsyncStorage.getItem(BRAND_KEY) as BrandPreset | null;
+
       if (storedTheme === 'dark' || storedTheme === 'light') {
         setThemeName(storedTheme);
-        return;
+      } else {
+        setThemeName(systemTheme === 'dark' ? 'dark' : 'light');
       }
-      setThemeName(systemTheme === 'dark' ? 'dark' : 'light');
+
+      if (storedBrand === 'orange' || storedBrand === 'emerald' || storedBrand === 'cobalt') {
+        setBrandPresetState(storedBrand);
+      }
     };
     loadTheme();
   }, [systemTheme]);
@@ -69,7 +66,12 @@ export default function App() {
     await AsyncStorage.setItem(THEME_KEY, nextTheme);
   };
 
-  const appPalette = palettes[themeName];
+  const setBrandPreset = async (brand: BrandPreset) => {
+    setBrandPresetState(brand);
+    await AsyncStorage.setItem(BRAND_KEY, brand);
+  };
+
+  const appPalette = getPalette(themeName, brandPreset);
   const navigationTheme: NavigationTheme = {
     ...(themeName === 'dark' ? DarkTheme : DefaultTheme),
     colors: {
@@ -85,7 +87,7 @@ export default function App() {
   return (
     <ErrorBoundary>
       <SafeAreaProvider>
-        <AppThemeContext.Provider value={{ theme: appPalette, themeName, toggleTheme }}>
+        <AppThemeContext.Provider value={{ theme: appPalette, themeName, brandPreset, toggleTheme, setBrandPreset }}>
           <NetworkProvider>
             <LanguageProvider>
               <UserProvider>

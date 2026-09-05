@@ -5,7 +5,7 @@ import { Switch } from 'react-native-paper';
 import { signOut } from 'firebase/auth';
 import * as Haptics from 'expo-haptics';
 import { auth } from '../../services/firebase';
-import { useAppTheme } from '../../theme/AppThemeContext';
+import { useAppTheme, type BrandPreset } from '../../theme/AppThemeContext';
 import { useUser } from '../../contexts/UserContext';
 import { useSimpleMode } from '../../contexts/SimpleModeContext';
 import ScreenHeader from '../../components/ScreenHeader';
@@ -15,7 +15,7 @@ import { snackbar } from '../../hooks/useSnackbar';
 import { layout, radius, spacing, type } from '../../theme/tokens';
 
 export default function Settings({ navigation }: { navigation: any }) {
-  const { theme, themeName, toggleTheme } = useAppTheme();
+  const { theme, themeName, brandPreset, toggleTheme, setBrandPreset } = useAppTheme();
   const { userData, isAdmin, canEdit } = useUser();
   const { t: tAll, tf, language, setLanguage } = useLanguage();
   const { simpleMode, setSimpleMode } = useSimpleMode();
@@ -24,12 +24,6 @@ export default function Settings({ navigation }: { navigation: any }) {
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [languageMenuOpen, setLanguageMenuOpen] = useState(false);
 
-  // Defense in depth: even though Firestore rules gate the underlying
-  // reads/writes (auditLogs is admin-only, commodities is admin-only,
-  // inventory is staff+), we hide the menu items from users who
-  // can't use them. A viewer tapping "AuditLog" would otherwise see
-  // an empty list with no obvious reason why — this is a UX win on
-  // top of the security boundary.
   const showInventory = canEdit;
   const showCommodities = isAdmin;
   const showAuditLog = isAdmin;
@@ -43,11 +37,6 @@ export default function Settings({ navigation }: { navigation: any }) {
 
   const selectedLanguageLabel = LANGUAGE_OPTIONS.find((option) => option.key === language)?.label || 'English';
 
-  // P32: simple-mode toggle. Flipping it persists to
-  // AsyncStorage and causes every consuming screen to grow its
-  // primary touch targets immediately (the SimpleModeContext
-  // value updates synchronously, then the AsyncStorage write
-  // is fire-and-forget).
   const handleSimpleModeToggle = (next: boolean) => {
     if (next === simpleMode) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -76,6 +65,12 @@ export default function Settings({ navigation }: { navigation: any }) {
     );
   };
 
+  const brandOptions: { key: BrandPreset; label: string; color: string }[] = [
+    { key: 'orange', label: (t as any).brandOrange || 'Burnt Orange', color: '#EA580C' },
+    { key: 'emerald', label: (t as any).brandEmerald || 'Emerald Green', color: '#10B981' },
+    { key: 'cobalt', label: (t as any).brandCobalt || 'Cobalt Blue', color: '#2563EB' },
+  ];
+
   return (
     <ScrollView contentContainerStyle={styles.screen}>
       <View style={styles.contentWrap}>
@@ -94,6 +89,43 @@ export default function Settings({ navigation }: { navigation: any }) {
               value: themeName === 'dark' ? t.themeDark : t.themeLight,
             })}
           />
+          <View style={styles.field}>
+            <Text style={styles.fieldLabel}>{(t as any).brandLabel || 'Accent Color'}</Text>
+            <View style={styles.brandRow}>
+              {brandOptions.map((opt) => (
+                <Pressable
+                  key={opt.key}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                    setBrandPreset(opt.key);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel={opt.label}
+                  style={({ pressed }) => [
+                    styles.brandChip,
+                    {
+                      borderColor: brandPreset === opt.key ? theme.primary : theme.border,
+                      backgroundColor: brandPreset === opt.key ? theme.primarySoft : theme.surface,
+                      opacity: pressed ? 0.8 : 1,
+                    },
+                  ]}
+                >
+                  <View style={[styles.colorDot, { backgroundColor: opt.color }]} />
+                  <Text
+                    style={[
+                      styles.brandChipText,
+                      { color: brandPreset === opt.key ? theme.primary : theme.text, fontWeight: brandPreset === opt.key ? '700' : '500' },
+                    ]}
+                  >
+                    {opt.key === 'orange' ? 'Orange' : opt.key === 'emerald' ? 'Emerald' : 'Cobalt'}
+                  </Text>
+                  {brandPreset === opt.key ? (
+                    <MaterialCommunityIcons name="check" size={16} color={theme.primary} />
+                  ) : null}
+                </Pressable>
+              ))}
+            </View>
+          </View>
           <View style={styles.field}>
             <Text style={styles.fieldLabel}>{t.language}</Text>
             <Pressable
@@ -297,6 +329,30 @@ function createStyles(theme) {
       ...type.eyebrow,
       color: theme.muted,
       marginBottom: spacing.sm,
+    },
+    brandRow: {
+      flexDirection: 'row',
+      gap: spacing.sm,
+      flexWrap: 'wrap',
+    },
+    brandChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      minHeight: 40,
+    },
+    colorDot: {
+      width: 12,
+      height: 12,
+      borderRadius: 6,
+    },
+    brandChipText: {
+      ...type.caption,
+      fontSize: 13,
     },
     languagePicker: {
       flexDirection: 'row',
