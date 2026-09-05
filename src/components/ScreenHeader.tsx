@@ -1,4 +1,4 @@
-import { type ReactNode } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { useAppTheme } from '../theme/AppThemeContext';
 import { spacing, type } from '../theme/tokens';
@@ -17,7 +17,7 @@ export default function ScreenHeader({
   style?: StyleProp<ViewStyle>;
 }) {
   const { theme } = useAppTheme();
-  const styles = createStyles(theme);
+  const styles = useMemo(() => createStyles(theme), [theme]);
 
   return (
     <View style={[styles.wrap, style]}>

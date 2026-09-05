@@ -1,4 +1,4 @@
-import { Component, type ReactNode, type ErrorInfo } from 'react';
+import { Component, useMemo, type ReactNode, type ErrorInfo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAppTheme } from '../theme/AppThemeContext';
@@ -64,7 +64,7 @@ export default class ErrorBoundary extends Component<Props, State> {
 
 function ErrorScreen({ error, onReload }: { error: Error; onReload: () => void }) {
   const { theme } = useAppTheme();
-  const styles = createStyles(theme);
+  const styles = useMemo(() => createStyles(theme), [theme]);
   return (
     <View style={styles.root} accessible accessibilityLabel="Application error">
       <View style={styles.iconCircle}>

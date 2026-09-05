@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -8,9 +8,17 @@ import { db } from '../../services/firebase';
 import { useAppTheme } from '../../theme/AppThemeContext';
 import { useCommodities } from '../../contexts/CommoditiesContext';
 import { useLanguage } from '../../contexts/LanguageContext';
+import { useUser } from '../../contexts/UserContext';
 import { flattenContents } from '../../services/boxLines';
+import {
+  exportToCSV,
+  exportToEchoCSV,
+  exportToUsaidCSV,
+} from '../../services/export';
+import { logAction } from '../../services/audit';
 import { firestoreOnError } from '../../hooks/useFirestoreSubscription';
 import { logger } from '../../services/logger';
+import { snackbar } from '../../hooks/useSnackbar';
 
 import ScreenHeader from '../../components/ScreenHeader';
 import SurfaceCard from '../../components/SurfaceCard';
@@ -22,12 +30,18 @@ import { layout, radius, spacing, type } from '../../theme/tokens';
 export default function Analytics() {
   const { theme } = useAppTheme();
   const { commodities } = useCommodities();
+  const { userData } = useUser();
   const { t: tAll } = useLanguage();
   const t = tAll('analytics');
   const tStatus = tAll('status');
   const [boxes, setBoxes] = useState([]);
   const [scanHistory, setScanHistory] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
+  // P57: export handlers run async. Track which is in flight so we
+  // can disable that one button (and show a spinner-style state)
+  // without blocking the others. The snackbar surfaces success or
+  // failure.
+  const [exporting, setExporting] = useState(null);
   const styles = useMemo(() => createStyles(theme), [theme]);
 
   // P35: cap each subscription at 500 docs. Analytics doesn't need
@@ -219,6 +233,12 @@ export default function Analytics() {
       scansByDay[date] = (scansByDay[date] || 0) + 1;
     });
 
+    const auditByAction = {};
+    allAudit.forEach((entry) => {
+      const action = entry.action || 'unknown';
+      auditByAction[action] = (auditByAction[action] || 0) + 1;
+    });
+
     // Per-commodity totals, derived from the contents map (with
     // legacy field fallback for boxes written by v1.0).
     const commodityTotals = {};
@@ -236,7 +256,7 @@ export default function Analytics() {
     return {
       stored, dispatched, returned,
       categoryCounts, warehouseCounts, donorCounts,
-      scansByAction, scansByDay,
+      scansByAction, scansByDay, auditByAction,
       commodityTotals,
       totalBoxes: boxes.length,
       // P35: totals reflect the *loaded* set (live window plus
@@ -249,6 +269,108 @@ export default function Analytics() {
       totalAuditLogs: allAudit.length,
     };
   }, [boxes, allScans, allAudit, commodities]);
+
+  // P57: dispatched boxes are the input to every donor export.
+  // We compute them once per render and feed the same array to
+  // the three buttons so the writers see a consistent view.
+  // P33 also lives here — each box's `recipient` / `recipientContact`
+  // and `dispatchedAt` flow through unchanged into the CSV.
+  const dispatchedBoxes = useMemo(
+    () => boxes.filter((b) => b.status === 'dispatched'),
+    [boxes]
+  );
+
+  // P57: export handlers. Each one delegates to the existing
+  // `exportTo*CSV` helpers in `src/services/export.ts`. We guard
+  // on the dispatchedBoxes length to give a useful error before
+  // the writer (which would silently return null).
+  const handleExportAll = useCallback(async () => {
+    if (exporting) return;
+    if (dispatchedBoxes.length === 0) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      snackbar.error(t.exportsEmpty);
+      return;
+    }
+    setExporting('all');
+    try {
+      const rows = dispatchedBoxes.map((b) => {
+        const flat = flattenContents(b.contents || {});
+        return {
+          id: b.id,
+          status: b.status,
+          recipient: b.recipient || '',
+          recipientContact: b.recipientContact || '',
+          donor: b.donorName || '',
+          warehouse: b.warehouseId || '',
+          category: b.category || '',
+          tags: (b.tags || []).join('|'),
+          dispatchedAt:
+            b.dispatchedAt?.toDate?.()?.toISOString()?.slice(0, 10) || '',
+          ...flat,
+        };
+      });
+      const result = await exportToCSV(rows, `hopebox-dispatched-${Date.now()}`);
+      if (result == null) {
+        snackbar.error(t.exportAllFailed);
+      } else {
+        await logAction('export_csv', { count: rows.length, scope: 'dispatched' }, userData?.id);
+        snackbar.success(t.exportAllSuccess);
+      }
+    } catch (err) {
+      logger.logError('Analytics/exportAll', err);
+      snackbar.error(t.exportAllFailed);
+    } finally {
+      setExporting(null);
+    }
+  }, [dispatchedBoxes, exporting, t, userData]);
+
+  const handleExportEcho = useCallback(async () => {
+    if (exporting) return;
+    if (dispatchedBoxes.length === 0) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      snackbar.error(t.exportsEmpty);
+      return;
+    }
+    setExporting('echo');
+    try {
+      const result = await exportToEchoCSV(dispatchedBoxes, `echo-distribution-${Date.now()}`);
+      if (result == null) {
+        snackbar.error(t.exportDonorFailed);
+      } else {
+        await logAction('export_echo', { count: dispatchedBoxes.length }, userData?.id);
+        snackbar.success(t.exportEchoSuccess);
+      }
+    } catch (err) {
+      logger.logError('Analytics/exportEcho', err);
+      snackbar.error(t.exportDonorFailed);
+    } finally {
+      setExporting(null);
+    }
+  }, [dispatchedBoxes, exporting, t, userData]);
+
+  const handleExportUsaid = useCallback(async () => {
+    if (exporting) return;
+    if (dispatchedBoxes.length === 0) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      snackbar.error(t.exportsEmpty);
+      return;
+    }
+    setExporting('usaid');
+    try {
+      const result = await exportToUsaidCSV(dispatchedBoxes, `usaid-distribution-${Date.now()}`);
+      if (result == null) {
+        snackbar.error(t.exportDonorFailed);
+      } else {
+        await logAction('export_usaid', { count: dispatchedBoxes.length }, userData?.id);
+        snackbar.success(t.exportUsaidSuccess);
+      }
+    } catch (err) {
+      logger.logError('Analytics/exportUsaid', err);
+      snackbar.error(t.exportDonorFailed);
+    } finally {
+      setExporting(null);
+    }
+  }, [dispatchedBoxes, exporting, t, userData]);
 
   const renderBar = (label, value, max, color) => (
     <View key={label} style={styles.barRow}>
@@ -365,7 +487,7 @@ export default function Analytics() {
                   onPress={loadOlderScans}
                   disabled={loadingOlderScans}
                   accessibilityRole="button"
-                  accessibilityLabel={t.loadOlder}
+                  accessibilityLabel={t.loadOlderScans}
                   style={({ pressed }) => [
                     styles.loadMoreBtn,
                     { borderColor: theme.primary, opacity: loadingOlderScans ? 0.6 : pressed ? 0.85 : 1 },
@@ -373,7 +495,32 @@ export default function Analytics() {
                 >
                   <MaterialCommunityIcons name="history" size={16} color={theme.primary} />
                   <Text style={[styles.loadMoreText, { color: theme.primary }]}>
-                    {loadingOlderScans ? t.loading : t.loadOlder}
+                    {loadingOlderScans ? t.loading : t.loadOlderScans}
+                  </Text>
+                </Pressable>
+              ) : null}
+              {Object.keys(stats.auditByAction).length > 0 ? (
+                <View style={styles.auditActivity}>
+                  <Text style={[styles.auditTitle, { color: theme.text }]}>{t.auditActivity}</Text>
+                  {Object.entries(stats.auditByAction).slice(0, 5).map(([action, count]) =>
+                    renderBar(action, count, stats.totalAuditLogs, theme.warning)
+                  )}
+                </View>
+              ) : null}
+              {hasMoreAudit ? (
+                <Pressable
+                  onPress={loadOlderAudit}
+                  disabled={loadingOlderAudit}
+                  accessibilityRole="button"
+                  accessibilityLabel={t.loadOlderAudit}
+                  style={({ pressed }) => [
+                    styles.loadMoreBtn,
+                    { borderColor: theme.warning, opacity: loadingOlderAudit ? 0.6 : pressed ? 0.85 : 1 },
+                  ]}
+                >
+                  <MaterialCommunityIcons name="history" size={16} color={theme.warning} />
+                  <Text style={[styles.loadMoreText, { color: theme.warning }]}>
+                    {loadingOlderAudit ? t.loading : t.loadOlderAudit}
                   </Text>
                 </Pressable>
               ) : null}
@@ -390,9 +537,90 @@ export default function Analytics() {
               </SurfaceCard>
             </FadeInUp>
           ) : null}
+
+          {/* P57: Donor Reports. Three buttons that call the
+              existing ECHO/USAID/generic CSV writers in
+              `src/services/export.ts`. We always render the
+              card; when there are no dispatched boxes, an
+              empty-state message replaces the buttons so the
+              card itself doesn't flicker on/off as boxes
+              transition. */}
+          <FadeInUp delay={360}>
+            <SurfaceCard>
+              <Text style={[styles.sectionTitle, { color: theme.text }]}>{t.exportsTitle}</Text>
+              <Text style={[styles.helper, { color: theme.muted }]}>{t.exportsSubtitle}</Text>
+              {dispatchedBoxes.length === 0 ? (
+                <View style={[styles.exportsEmpty, { borderColor: theme.border, backgroundColor: theme.surfaceRaised }]}>
+                  <MaterialCommunityIcons
+                    name="file-document-outline"
+                    size={20}
+                    color={theme.muted}
+                  />
+                  <Text style={[styles.exportsEmptyText, { color: theme.muted }]}>
+                    {t.exportsEmpty}
+                  </Text>
+                </View>
+              ) : (
+                <View style={styles.exportGrid}>
+                  <ExportButton
+                    theme={theme}
+                    styles={styles}
+                    icon="file-export-outline"
+                    label={t.exportAll}
+                    onPress={handleExportAll}
+                    busy={exporting === 'all'}
+                    disabled={!!exporting && exporting !== 'all'}
+                    accent={theme.primary}
+                  />
+                  <ExportButton
+                    theme={theme}
+                    styles={styles}
+                    icon="file-document-outline"
+                    label={t.exportEcho}
+                    onPress={handleExportEcho}
+                    busy={exporting === 'echo'}
+                    disabled={!!exporting && exporting !== 'echo'}
+                    accent={theme.success}
+                  />
+                  <ExportButton
+                    theme={theme}
+                    styles={styles}
+                    icon="file-table-outline"
+                    label={t.exportUsaid}
+                    onPress={handleExportUsaid}
+                    busy={exporting === 'usaid'}
+                    disabled={!!exporting && exporting !== 'usaid'}
+                    accent={theme.warning}
+                  />
+                </View>
+              )}
+            </SurfaceCard>
+          </FadeInUp>
         </View>
       </ScrollView>
     </View>
+  );
+}
+
+function ExportButton({ theme, styles, icon, label, onPress, busy, disabled, accent }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled || busy}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ busy, disabled: !!disabled }}
+      style={({ pressed }) => [
+        styles.exportBtn,
+        {
+          borderColor: accent,
+          opacity: busy ? 0.6 : disabled ? 0.4 : pressed ? 0.85 : 1,
+        },
+      ]}
+    >
+      <MaterialCommunityIcons name={icon} size={20} color={accent} />
+      <Text style={[styles.exportBtnText, { color: accent }]}>{label}</Text>
+    </Pressable>
   );
 }
 
@@ -442,6 +670,8 @@ function createStyles(theme) {
       minHeight: 40,
     },
     loadMoreText: { ...type.caption, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 },
+    auditActivity: { marginTop: spacing.lg },
+    auditTitle: { ...type.bodyStrong, marginBottom: spacing.sm },
     metricGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
     barRow: { marginBottom: spacing.md },
     barHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: spacing.xs },
@@ -449,5 +679,40 @@ function createStyles(theme) {
     barValue: { ...type.caption, fontWeight: '700' },
     barTrack: { height: 10, borderRadius: radius.pill, overflow: 'hidden' },
     barFill: { height: '100%', borderRadius: radius.pill },
+    // P57: Donor Reports card. The buttons take the full row
+    // width — narrower than the action tiles on the Dashboard
+    // because each is a one-shot operation rather than a
+    // navigation target. The empty state has its own border +
+    // muted background so the card never looks broken when
+    // there are no dispatched boxes yet.
+    helper: { ...type.body, marginBottom: spacing.md },
+    exportsEmpty: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      padding: spacing.md,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      marginTop: spacing.xs,
+    },
+    exportsEmptyText: { ...type.body, flex: 1 },
+    exportGrid: {
+      gap: spacing.md,
+      marginTop: spacing.xs,
+    },
+    exportBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.md,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      minHeight: 48,
+    },
+    exportBtnText: {
+      ...type.bodyStrong,
+      flex: 1,
+    },
   });
 }

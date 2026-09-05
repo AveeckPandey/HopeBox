@@ -132,8 +132,8 @@ The claims are highly accurate. Only 2 items are outdated (P11, P59 are incorrec
 **Issue:** .env contains real Firebase credentials visible in git  
 **Evidence:** 
 ```
-EXPO_PUBLIC_FIREBASE_API_KEY=AIzaSyBrBmRCVqEaMMbj-_md5-xgS1ZzfuS3_cI
-EXPO_PUBLIC_FIREBASE_PROJECT_ID=hopebox-buildwithaveeck
+EXPO_PUBLIC_FIREBASE_API_KEY=<redacted>
+EXPO_PUBLIC_FIREBASE_PROJECT_ID=<redacted>
 ```
 **Action Required:** Immediate rotation and git history purge  
 **See:** SECURITY_ALERT.md

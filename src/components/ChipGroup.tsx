@@ -1,4 +1,5 @@
-import { Pressable, ScrollView, StyleSheet, Text, View, type AccessibilityProps, type StyleProp, type ViewStyle } from 'react-native';
+import { useMemo } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { useAppTheme } from '../theme/AppThemeContext';
 import { radius, spacing, type } from '../theme/tokens';
 
@@ -26,7 +27,7 @@ export default function ChipGroup({
   accessibilityLabel?: string;
 }) {
   const { theme } = useAppTheme();
-  const styles = createStyles(theme);
+  const styles = useMemo(() => createStyles(theme), [theme]);
 
   const normalized: ChipOption[] = options.map((o) =>
     typeof o === 'string' ? { key: o, label: o.charAt(0).toUpperCase() + o.slice(1) } : o

@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { useAppTheme } from '../theme/AppThemeContext';
 import { spacing, type } from '../theme/tokens';
@@ -14,7 +15,7 @@ import { spacing, type } from '../theme/tokens';
 // same background.
 export default function SplashScreen({ message }: { message?: string }) {
   const { theme } = useAppTheme();
-  const styles = createStyles(theme);
+  const styles = useMemo(() => createStyles(theme), [theme]);
   return (
     <View
       style={styles.root}

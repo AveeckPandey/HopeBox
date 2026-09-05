@@ -83,7 +83,7 @@ export const DEFAULT_COMMODITIES = [
   },
   {
     id: DEFAULT_COMMODITY_IDS.dal,
-    name: 'Dal',
+    name: 'Pluses',
     unit: 'kg',
     icon: 'seed',
     color: '#C97A4A',

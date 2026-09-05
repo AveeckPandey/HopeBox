@@ -1,15 +1,16 @@
-import { useMemo } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { useMemo, useState } from 'react';
+import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Switch } from 'react-native-paper';
 import { signOut } from 'firebase/auth';
 import * as Haptics from 'expo-haptics';
 import { auth } from '../../services/firebase';
 import { useAppTheme } from '../../theme/AppThemeContext';
 import { useUser } from '../../contexts/UserContext';
+import { useSimpleMode } from '../../contexts/SimpleModeContext';
 import ScreenHeader from '../../components/ScreenHeader';
 import SurfaceCard from '../../components/SurfaceCard';
-import ChipGroup from '../../components/ChipGroup';
-import { useLanguage } from '../../contexts/LanguageContext';
+import { LANGUAGE_OPTIONS, useLanguage } from '../../contexts/LanguageContext';
 import { snackbar } from '../../hooks/useSnackbar';
 import { layout, radius, spacing, type } from '../../theme/tokens';
 
@@ -17,9 +18,11 @@ export default function Settings({ navigation }: { navigation: any }) {
   const { theme, themeName, toggleTheme } = useAppTheme();
   const { userData, isAdmin, canEdit } = useUser();
   const { t: tAll, tf, language, setLanguage } = useLanguage();
+  const { simpleMode, setSimpleMode } = useSimpleMode();
   const t = tAll('settings');
   const tCommon = tAll('common');
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const [languageMenuOpen, setLanguageMenuOpen] = useState(false);
 
   // Defense in depth: even though Firestore rules gate the underlying
   // reads/writes (auditLogs is admin-only, commodities is admin-only,
@@ -31,14 +34,24 @@ export default function Settings({ navigation }: { navigation: any }) {
   const showCommodities = isAdmin;
   const showAuditLog = isAdmin;
 
-  // P51: language picker. Both English and Hindi are wired into
-  // the loader table in LanguageContext; missing Hindi keys fall
-  // back to English via the deep merge in `strings.hi.js`. No
-  // "coming soon" snackbar — the switch is a real, working toggle.
-  const handleLanguageChange = (next: string) => {
+  const handleLanguageChange = (next: (typeof LANGUAGE_OPTIONS)[number]['key']) => {
     if (next === language) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setLanguage(next as 'en' | 'hi');
+    setLanguage(next);
+    setLanguageMenuOpen(false);
+  };
+
+  const selectedLanguageLabel = LANGUAGE_OPTIONS.find((option) => option.key === language)?.label || 'English';
+
+  // P32: simple-mode toggle. Flipping it persists to
+  // AsyncStorage and causes every consuming screen to grow its
+  // primary touch targets immediately (the SimpleModeContext
+  // value updates synchronously, then the AsyncStorage write
+  // is fire-and-forget).
+  const handleSimpleModeToggle = (next: boolean) => {
+    if (next === simpleMode) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setSimpleMode(next);
   };
 
   const handleSignOut = () => {
@@ -83,14 +96,60 @@ export default function Settings({ navigation }: { navigation: any }) {
           />
           <View style={styles.field}>
             <Text style={styles.fieldLabel}>{t.language}</Text>
-            <ChipGroup
-              options={[
-                { key: 'en', label: t.languageEnglish },
-                { key: 'hi', label: t.languageHindi },
+            <Pressable
+              onPress={() => setLanguageMenuOpen(true)}
+              accessibilityRole="button"
+              style={({ pressed }) => [
+                styles.languagePicker,
+                {
+                  backgroundColor: theme.surface,
+                  borderColor: theme.border,
+                  opacity: pressed ? 0.8 : 1,
+                },
               ]}
-              value={language}
-              onChange={handleLanguageChange}
-              scrollable={false}
+            >
+              <Text style={[styles.languagePickerText, { color: theme.text }]}>{selectedLanguageLabel}</Text>
+              <MaterialCommunityIcons name="chevron-down" size={18} color={theme.muted} />
+            </Pressable>
+            <Modal visible={languageMenuOpen} transparent animationType="fade" onRequestClose={() => setLanguageMenuOpen(false)}>
+              <Pressable style={styles.languageModalOverlay} onPress={() => setLanguageMenuOpen(false)}>
+                <Pressable style={[styles.languageModalSheet, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                  <Text style={[styles.languageModalTitle, { color: theme.text }]}>{t.language}</Text>
+                  <ScrollView style={styles.languageList}>
+                    {LANGUAGE_OPTIONS.map((option) => (
+                      <Pressable
+                        key={option.key}
+                        onPress={() => handleLanguageChange(option.key)}
+                        style={({ pressed }) => [
+                          styles.languageOption,
+                          {
+                            backgroundColor: language === option.key ? theme.primary + '22' : 'transparent',
+                            borderColor: language === option.key ? theme.primary : theme.border,
+                            opacity: pressed ? 0.8 : 1,
+                          },
+                        ]}
+                      >
+                        <Text style={[styles.languageOptionText, { color: theme.text }]}>{option.label}</Text>
+                        {language === option.key ? (
+                          <MaterialCommunityIcons name="check" size={18} color={theme.primary} />
+                        ) : null}
+                      </Pressable>
+                    ))}
+                  </ScrollView>
+                </Pressable>
+              </Pressable>
+            </Modal>
+          </View>
+          <View style={[styles.simpleRow, { borderTopColor: theme.border }]}>
+            <View style={styles.simpleText}>
+              <Text style={[styles.simpleLabel, { color: theme.text }]}>{t.simpleMode}</Text>
+              <Text style={[styles.simpleHelper, { color: theme.muted }]}>{t.simpleModeHelper}</Text>
+            </View>
+            <Switch
+              value={simpleMode}
+              onValueChange={handleSimpleModeToggle}
+              color={theme.primary}
+              accessibilityLabel={t.simpleMode}
             />
           </View>
         </SurfaceCard>
@@ -233,15 +292,78 @@ function createStyles(theme) {
       color: theme.primary,
       marginBottom: spacing.sm,
     },
-    // P51: language picker field. The label mirrors the
-    // eyebrow style used by the rest of the surface cards, and
-    // the ChipGroup is given extra top spacing to breathe.
     field: { marginTop: spacing.md },
     fieldLabel: {
       ...type.eyebrow,
       color: theme.muted,
       marginBottom: spacing.sm,
     },
+    languagePicker: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      borderWidth: 1,
+      borderRadius: radius.md,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.md,
+      minHeight: 48,
+    },
+    languagePickerText: {
+      ...type.bodyStrong,
+      flex: 1,
+    },
+    languageModalOverlay: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.45)',
+      justifyContent: 'center',
+      alignItems: 'center',
+      padding: spacing.lg,
+    },
+    languageModalSheet: {
+      width: '100%',
+      maxWidth: 420,
+      borderWidth: 1,
+      borderRadius: radius.lg,
+      padding: spacing.md,
+      maxHeight: '70%',
+    },
+    languageModalTitle: {
+      ...type.eyebrow,
+      marginBottom: spacing.sm,
+    },
+    languageList: {
+      maxHeight: 420,
+    },
+    languageOption: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      borderWidth: 1,
+      borderRadius: radius.sm,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.md,
+      marginBottom: spacing.sm,
+    },
+    languageOptionText: {
+      ...type.body,
+      flex: 1,
+    },
+    // P32: simple-mode toggle row. A horizontal flex with the
+    // label + helper on the left and the Switch on the right.
+    // A 1px top border separates it visually from the language
+    // picker above.
+    simpleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: spacing.md,
+      paddingTop: spacing.md,
+      marginTop: spacing.md,
+      borderTopWidth: 1,
+    },
+    simpleText: { flex: 1 },
+    simpleLabel: { ...type.bodyStrong },
+    simpleHelper: { ...type.caption, marginTop: 2 },
     signOutBtn: {
       flexDirection: 'row',
       alignItems: 'center',

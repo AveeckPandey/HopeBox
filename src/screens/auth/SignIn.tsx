@@ -19,6 +19,7 @@ import { auth } from '../../services/firebase';
 import { logger } from '../../services/logger';
 import { useAppTheme } from '../../theme/AppThemeContext';
 import { useLanguage } from '../../contexts/LanguageContext';
+import { useSimpleMode } from '../../contexts/SimpleModeContext';
 import { snackbar } from '../../hooks/useSnackbar';
 
 import AmbientGlow from '../../components/AmbientGlow';
@@ -28,6 +29,7 @@ import { layout, radius, spacing, type } from '../../theme/tokens';
 export default function SignIn({ navigation }) {
   const { theme } = useAppTheme();
   const { t: tAll, language } = useLanguage();
+  const { scale: simpleScale } = useSimpleMode();
   const t = tAll('auth');
   const tApp = tAll('app');
   const [email, setEmail] = useState('');
@@ -83,7 +85,7 @@ export default function SignIn({ navigation }) {
     }
   };
 
-  const styles = useMemo(() => createStyles(theme), [theme]);
+  const styles = useMemo(() => createStyles(theme, simpleScale), [theme, simpleScale]);
 
   return (
     <KeyboardAvoidingView
@@ -212,7 +214,12 @@ export default function SignIn({ navigation }) {
   );
 }
 
-function createStyles(theme) {
+function createStyles(theme, simpleScale = 1) {
+  // P32: simple mode scales the primary CTA's minHeight so low-
+  // literacy field staff can hit it reliably. The button text gets
+  // a small bump too.
+  const buttonMinHeight = Math.round(52 * simpleScale);
+  const buttonFontSize = Math.round(15 * simpleScale);
   return StyleSheet.create({
     root: { flex: 1, backgroundColor: theme.background },
     // P28: tap-anywhere-to-dismiss-keyboard layer. Sits between
@@ -269,10 +276,10 @@ function createStyles(theme) {
     errorText: { fontSize: 13 },
     button: {
       paddingVertical: spacing.lg, borderRadius: radius.md, alignItems: 'center',
-      minHeight: 52, shadowColor: theme.primary, shadowOffset: { width: 0, height: 4 },
+      minHeight: buttonMinHeight, shadowColor: theme.primary, shadowOffset: { width: 0, height: 4 },
       shadowOpacity: 0.3, shadowRadius: 12, elevation: 6,
     },
-    buttonText: { ...type.bodyStrong, fontSize: 15, letterSpacing: 1.5, textTransform: 'uppercase' },
+    buttonText: { ...type.bodyStrong, fontSize: buttonFontSize, letterSpacing: 1.5, textTransform: 'uppercase' },
     footer: { flexDirection: 'row', justifyContent: 'center', marginTop: spacing.md, paddingBottom: spacing.sm },
     footerText: { fontSize: 14 },
     footerLink: { fontSize: 14, fontWeight: '600' },

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { addDoc, collection, Timestamp } from 'firebase/firestore';
 
@@ -11,7 +11,7 @@ import { useCommodities, useTemplates } from '../../contexts/CommoditiesContext'
 import { logAction } from '../../services/audit';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { snackbar } from '../../hooks/useSnackbar';
-import { needsBatch, needsExpiry, safeIcon } from '../../services/commodities';
+import { needsBatch, needsExpiry, safeIcon, saveCommodity } from '../../services/commodities';
 import { isFlatLine, normalizeLine, validateContents } from '../../services/boxLines';
 import { applyUnitConversion, listConversions } from '../../services/unitConversion';
 import { logger } from '../../services/logger';
@@ -196,6 +196,8 @@ export default function AddBox({ navigation }) {
   const [donorContact, setDonorContact] = useState('');
   const [selectedWarehouse, setSelectedWarehouse] = useState(currentWarehouse?.id || '');
   const [templateId, setTemplateId] = useState('');
+  const [customItemVisible, setCustomItemVisible] = useState(false);
+  const [customItemName, setCustomItemName] = useState('');
   const [busy, setBusy] = useState(false);
   const styles = useMemo(() => createStyles(theme), [theme]);
 
@@ -260,6 +262,35 @@ export default function AddBox({ navigation }) {
       }
       return next;
     });
+  };
+
+  const handleSaveCustomItem = async () => {
+    const trimmed = customItemName.trim();
+    if (!trimmed) {
+      snackbar.error('Item name is required');
+      return;
+    }
+
+    try {
+      await saveCommodity({
+        name: trimmed,
+        unit: 'unit',
+        icon: 'package-variant',
+        color: '#8A6FB0',
+        category: 'other',
+        defaultPerBox: 0,
+        required: false,
+        sortOrder: 999,
+        expiryTracking: false,
+        batchTracking: false,
+      });
+      setCustomItemName('');
+      setCustomItemVisible(false);
+      snackbar.success(`Added ${trimmed}`);
+    } catch (err) {
+      logger.logError('AddBox/customItem/save', err);
+      snackbar.error('Could not add custom item');
+    }
   };
 
   const handleAddBox = async () => {
@@ -375,6 +406,51 @@ export default function AddBox({ navigation }) {
                 </View>
               ) : null}
 
+              <Pressable
+                onPress={() => setCustomItemVisible(true)}
+                style={({ pressed }) => [
+                  styles.customItemButton,
+                  {
+                    backgroundColor: theme.primary,
+                    opacity: pressed ? 0.85 : 1,
+                  },
+                ]}
+              >
+                <MaterialCommunityIcons name="plus" size={18} color={theme.primaryText} />
+                <Text style={[styles.customItemButtonText, { color: theme.primaryText }]}>Custom item</Text>
+              </Pressable>
+
+              <Modal visible={customItemVisible} transparent animationType="fade" onRequestClose={() => setCustomItemVisible(false)}>
+                <Pressable style={styles.customItemOverlay} onPress={() => setCustomItemVisible(false)}>
+                  <Pressable style={[styles.customItemSheet, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                    <Text style={[styles.customItemTitle, { color: theme.text }]}>Add custom item</Text>
+                    <ThemedTextInput
+                      label="Item name"
+                      value={customItemName}
+                      onChangeText={setCustomItemName}
+                    />
+                    <View style={styles.modalActions}>
+                      <Pressable
+                        onPress={() => setCustomItemVisible(false)}
+                        style={({ pressed }) => [styles.modalBtn, { borderColor: theme.border, opacity: pressed ? 0.7 : 1 }]}
+                      >
+                        <Text style={[styles.modalBtnText, { color: theme.text }]}>Cancel</Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={handleSaveCustomItem}
+                        style={({ pressed }) => [
+                          styles.modalBtn,
+                          styles.modalBtnPrimary,
+                          { backgroundColor: theme.primary, opacity: pressed ? 0.9 : 1 },
+                        ]}
+                      >
+                        <Text style={[styles.modalBtnText, { color: theme.primaryText }]}>Save</Text>
+                      </Pressable>
+                    </View>
+                  </Pressable>
+                </Pressable>
+              </Modal>
+
               <Text style={[styles.sectionTitle, { color: theme.muted }]}>{t.contents}</Text>
               {commodities.map((c) => (
                 <CommodityLineRow
@@ -453,6 +529,55 @@ function createStyles(theme) {
       height: 1,
       backgroundColor: theme.border,
       marginVertical: spacing.md,
+    },
+    customItemButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.sm,
+      paddingVertical: spacing.sm,
+      borderRadius: radius.md,
+      minHeight: 44,
+      marginBottom: spacing.md,
+    },
+    customItemButtonText: {
+      ...type.bodyStrong,
+    },
+    customItemOverlay: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.45)',
+      justifyContent: 'center',
+      padding: spacing.md,
+    },
+    customItemSheet: {
+      borderWidth: 1,
+      borderRadius: radius.lg,
+      padding: spacing.md,
+    },
+    customItemTitle: {
+      ...type.eyebrow,
+      marginBottom: spacing.md,
+    },
+    modalActions: {
+      flexDirection: 'row',
+      justifyContent: 'flex-end',
+      gap: spacing.sm,
+      marginTop: spacing.md,
+    },
+    modalBtn: {
+      flex: 1,
+      minHeight: 44,
+      justifyContent: 'center',
+      alignItems: 'center',
+      borderWidth: 1,
+      borderRadius: radius.md,
+      paddingHorizontal: spacing.md,
+    },
+    modalBtnPrimary: {
+      borderColor: 'transparent',
+    },
+    modalBtnText: {
+      ...type.bodyStrong,
     },
     cta: {
       flexDirection: 'row',

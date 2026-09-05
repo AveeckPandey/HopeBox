@@ -16,7 +16,7 @@ type Props = {
 export default function StatusBadge({ status, size = 'md', style }: Props) {
   const { theme } = useAppTheme();
   const tone = statusTone(status, theme);
-  const styles = createStyles(theme);
+  const styles = React.useMemo(() => createStyles(theme), [theme]);
 
   const sizing = size === 'sm' ? styles.sm : styles.md;
 

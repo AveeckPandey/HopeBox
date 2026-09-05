@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAppTheme } from '../theme/AppThemeContext';
@@ -27,6 +27,7 @@ export default function PermissionBanner() {
   const tCommon = tAll('common') as { permissionDeniedTitle?: string; permissionDeniedMessage?: string; dismiss?: string };
   const [event, setEvent] = useState<PermissionErrorEvent | null>(null);
   const [translateY] = useState(() => new Animated.Value(-120));
+  const styles = useMemo(() => createStyles(theme), [theme]);
 
   useEffect(() => {
     const unsubscribe = subscribeToPermissionErrors((next) => {
@@ -56,7 +57,6 @@ export default function PermissionBanner() {
 
   if (!event) return null;
 
-  const styles = createStyles(theme);
   return (
     <Animated.View
       style={[styles.root, { transform: [{ translateY }] }]}

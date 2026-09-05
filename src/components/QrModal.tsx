@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { InteractionManager, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import QRCode from 'react-native-qrcode-svg';
+import { Modal, Pressable, StyleSheet, Text } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 // P34: full-screen QR modal. The Boxes list no longer renders
@@ -17,30 +17,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 // `value` is what the QR encodes. For a box this is the box
 // id. `visible` controls the modal. `onClose` fires on any
 // dismiss path so the caller can clear its own state.
-export default function QrModal({ visible, value, onClose, label, helperText }) {
-  const [Component, setComponent] = useState(null);
-
-  useEffect(() => {
-    if (!visible) {
-      setComponent(null);
-      return undefined;
-    }
-    let cancelled = false;
-    // InteractionManager delay keeps the QR module out of the
-    // modal-open animation path. By the time the user releases
-    // their finger, the underlying press animation has settled
-    // and the QR is mounted underneath.
-    const handle = InteractionManager.runAfterInteractions(() => {
-      if (cancelled) return;
-      const QR = require('react-native-qrcode-svg').default;
-      setComponent(() => QR);
-    });
-    return () => {
-      cancelled = true;
-      if (handle && typeof handle.cancel === 'function') handle.cancel();
-    };
-  }, [visible, value]);
-
+export default function QrModal({ visible, value, onClose, label, helperText, closeLabel, closePreviewLabel }) {
   return (
     <Modal
       visible={visible}
@@ -53,30 +30,26 @@ export default function QrModal({ visible, value, onClose, label, helperText }) 
         style={styles.backdrop}
         onPress={onClose}
         accessibilityRole="button"
-        accessibilityLabel="Close QR preview"
+        accessibilityLabel={closePreviewLabel}
       >
         <Pressable
           // Inner pressable absorbs taps so the outer dismiss
           // doesn't fire when the user taps the QR itself.
           style={styles.card}
           onPress={() => {}}
+          accessible={false}
         >
-          {Component ? (
-            <Component value={value} size={240} color="#000000" backgroundColor="#FFFFFF" />
-          ) : (
-            // Reserve the QR footprint so the card doesn't reflow.
-            <View style={styles.qrPlaceholder} />
-          )}
+          <QRCode value={value} size={240} color="#000000" backgroundColor="#FFFFFF" />
           {label ? <Text style={styles.label}>{label}</Text> : null}
           {helperText ? <Text style={styles.helper}>{helperText}</Text> : null}
           <Pressable
             onPress={onClose}
             accessibilityRole="button"
-            accessibilityLabel="Close"
+            accessibilityLabel={closeLabel}
             style={({ pressed }) => [styles.closeBtn, pressed && { opacity: 0.7 }]}
           >
             <MaterialCommunityIcons name="close" size={18} color="#FFFFFF" />
-            <Text style={styles.closeText}>Close</Text>
+            <Text style={styles.closeText}>{closeLabel}</Text>
           </Pressable>
         </Pressable>
       </Pressable>
@@ -99,11 +72,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 16,
     minWidth: 280,
-  },
-  qrPlaceholder: {
-    width: 240,
-    height: 240,
-    backgroundColor: '#F5F5F5',
   },
   label: {
     fontSize: 18,

@@ -1,4 +1,4 @@
-import { type ReactNode } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { useAppTheme } from '../theme/AppThemeContext';
 import { elevation, radius, spacing } from '../theme/tokens';
@@ -18,7 +18,7 @@ export default function SurfaceCard({
   padding?: number;
 }) {
   const { theme } = useAppTheme();
-  const styles = createStyles(theme);
+  const styles = useMemo(() => createStyles(theme), [theme]);
 
   const toneStyle = tone === 'flat'
     ? styles.flat

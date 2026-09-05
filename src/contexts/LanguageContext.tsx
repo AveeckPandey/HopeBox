@@ -5,19 +5,56 @@ import { merged as hiStrings } from "../i18n/strings.hi";
 
 const LANGUAGE_KEY = "hopebox-language";
 
-type Language = "en" | "hi";
+export const LANGUAGE_OPTIONS = [
+  { key: "en", label: "English" },
+  { key: "hi", label: "हिन्दी" },
+  { key: "bn", label: "বাংলা (Bangla)" },
+  { key: "ts", label: "Setswana" },
+  { key: "lg", label: "Luganda" },
+  { key: "ar", label: "العربية" },
+  { key: "yo", label: "Yoruba" },
+  { key: "si", label: "සිංහල" },
+  { key: "ne", label: "नेपाली" },
+  { key: "ms", label: "Bahasa Melayu" },
+  { key: "id", label: "Bahasa Indonesia" },
+  { key: "sw", label: "Kiswahili" },
+  { key: "fr", label: "Français" },
+  { key: "zu", label: "IsiZulu" },
+  { key: "fil", label: "Filipino" },
+  { key: "it", label: "Italiano" },
+  { key: "pt", label: "Português" },
+  { key: "es", label: "Español" },
+  { key: "mg", label: "Malagasy" },
+  { key: "ny", label: "Chichewa" },
+] as const;
+
+export type Language = (typeof LANGUAGE_OPTIONS)[number]["key"];
 
 // Single source of truth for all user-facing copy in the app.
-// Languages are loaded from the `strings` catalog. When a locale map
-// is added, register it under LANGUAGE_KEY in a `loaders` table and
-// the rest of the app keeps working unchanged.
-
+// We support a wider language list for selection in settings, but the
+// actual translated catalog is only implemented for English and Hindi.
+// All other locales intentionally fall back to English for now.
 const loaders: Record<Language, () => unknown> = {
   en: () => strings,
-  // P51: real Hindi catalog. Missing keys fall back to English via
-  // the deep merge in `strings.hi.js` so partial translations are
-  // safe to ship.
   hi: () => hiStrings,
+  bn: () => strings,
+  ts: () => strings,
+  lg: () => strings,
+  ar: () => strings,
+  yo: () => strings,
+  si: () => strings,
+  ne: () => strings,
+  ms: () => strings,
+  id: () => strings,
+  sw: () => strings,
+  fr: () => strings,
+  zu: () => strings,
+  fil: () => strings,
+  it: () => strings,
+  pt: () => strings,
+  es: () => strings,
+  mg: () => strings,
+  ny: () => strings,
 };
 
 type LanguageValue = {
@@ -54,15 +91,15 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const loadLanguage = async () => {
       const stored = await AsyncStorage.getItem(LANGUAGE_KEY);
-      if (stored && (stored === "en" || stored === "hi")) {
-        setLanguageState(stored);
+      if (stored && stored in loaders) {
+        setLanguageState(stored as Language);
       }
     };
     loadLanguage();
   }, []);
 
   const setLanguage = async (lang: Language) => {
-    if (!loaders[lang]) return;
+    if (!(lang in loaders)) return;
     setLanguageState(lang);
     await AsyncStorage.setItem(LANGUAGE_KEY, lang);
   };

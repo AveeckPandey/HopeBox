@@ -35,6 +35,8 @@ export const strings = {
     termsSuffix: ' and ',
     termsOfService: 'Terms of Service',
     privacyPolicy: 'Privacy Policy',
+    legalLinkHint: 'Opens in your browser',
+    legalLinkUnavailable: 'This policy link has not been configured yet.',
     errors: {
       emailInvalid: 'Enter a valid email address',
       passwordShort: 'Password must be at least 8 characters',
@@ -114,6 +116,8 @@ export const strings = {
     countMany: 'boxes',
     viewQR: 'View QR',
     qrHelper: 'Scan to open this box on another device',
+    closeQrPreview: 'Close QR preview',
+    close: 'Close',
     boxId: 'Box ID',
     stored: 'Stored',
     dispatched: 'Dispatched',
@@ -159,6 +163,19 @@ export const strings = {
     returnConfirmMessage: 'Inventory will be restored by the box contents.',
     deleteConfirmTitle: 'Delete this box?',
     deleteConfirmMessage: 'The box record will be removed. Inventory is not affected — only the box history.',
+    // P33: recipient capture at dispatch. The modal appears
+    // before the dispatch confirmation; both fields are
+    // optional, but filling in the name makes donor reports
+    // (ECHO / USAID) immediately useful.
+    recipientTitle: 'Who is receiving this box?',
+    recipientHelper: 'Optional. Capture the recipient so donor reports include them.',
+    recipientName: 'Recipient name',
+    recipientContact: 'Contact (phone or ID)',
+    recipientSkip: 'Skip',
+    recipientDispatch: 'Continue',
+    recipientSaved: 'Recipient saved',
+    recipientField: 'Recipient',
+    recipientEmpty: 'Not recorded',
   },
 
   addBox: {
@@ -346,7 +363,24 @@ export const strings = {
     // pagination affordance.
     showingMostRecent: 'Showing most recent',
     loadOlder: 'Load older',
+    loadOlderScans: 'Load older scans',
+    loadOlderAudit: 'Load older audit activity',
+    auditActivity: 'Audit activity',
     loading: 'Loading…',
+    // P57: donor reporting. The buttons trigger ECHO/USAID
+    // writers from src/services/export.ts. The empty state
+    // surfaces when no boxes have been dispatched yet.
+    exportsTitle: 'Donor Reports',
+    exportsSubtitle: 'Export dispatched-box distribution in formats your donors accept.',
+    exportAll: 'Export all (CSV)',
+    exportAllSuccess: 'CSV exported',
+    exportAllFailed: 'Could not export CSV',
+    exportEcho: 'ECHO distribution report',
+    exportUsaid: 'USAID distribution report',
+    exportEchoSuccess: 'ECHO report saved',
+    exportUsaidSuccess: 'USAID report saved',
+    exportDonorFailed: 'Could not export donor report',
+    exportsEmpty: 'Dispatch at least one box before generating donor reports.',
   },
 
   auditLog: {
@@ -368,7 +402,7 @@ export const strings = {
     themeSystem: 'System',
     language: 'Language',
     languageEnglish: 'English',
-    languageHindi: 'हिन्दी (coming soon)',
+    languageHindi: 'हिन्दी',
     account: 'Account',
     signedInAs: 'Signed in as',
     role: 'Role',
@@ -388,6 +422,10 @@ export const strings = {
     // later (today: same character).
     themeAccessibility: '{{label}}: {{value}}. Tap to switch.',
     emptyValue: '—',
+    // P32: simple mode toggle. When on, primary CTAs and
+    // touch targets across the app grow to roughly 1.25x.
+    simpleMode: 'Simple Mode',
+    simpleModeHelper: 'Larger buttons and simpler layout. Recommended for low-literacy field staff.',
   },
 
   status: {

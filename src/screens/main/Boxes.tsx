@@ -296,6 +296,8 @@ export default function Boxes({ navigation }) {
         onClose={handleCloseQr}
         label={qrModalBox?.id}
         helperText={t.qrHelper}
+        closeLabel={t.close}
+        closePreviewLabel={t.closeQrPreview}
       />
     </View>
   );

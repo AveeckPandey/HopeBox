@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Animated, useColorScheme } from 'react-native';
 import { NavigationContainer, DarkTheme, DefaultTheme, type Theme as NavigationTheme } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -13,6 +13,7 @@ import { WarehouseProvider } from './src/contexts/WarehouseContext';
 import { CommoditiesProvider } from './src/contexts/CommoditiesContext';
 import { LanguageProvider } from './src/contexts/LanguageContext';
 import { NetworkProvider } from './src/contexts/NetworkContext';
+import { SimpleModeProvider } from './src/contexts/SimpleModeContext';
 
 import ErrorBoundary from './src/components/ErrorBoundary';
 import SnackbarHost from './src/components/SnackbarHost';
@@ -90,7 +91,9 @@ export default function App() {
               <UserProvider>
                 <WarehouseProvider>
                   <CommoditiesProvider>
-                    <NavigationRoot navigationTheme={navigationTheme} themeName={themeName} />
+                    <SimpleModeProvider>
+                      <NavigationRoot navigationTheme={navigationTheme} themeName={themeName} />
+                    </SimpleModeProvider>
                   </CommoditiesProvider>
                 </WarehouseProvider>
               </UserProvider>
@@ -134,7 +137,12 @@ function NavigationRoot({ navigationTheme, themeName }: { navigationTheme: Navig
 // swaps to the navigator once the fade has begun. The `ready` prop
 // flips true when `UserContext.loading` resolves.
 function BootSplash({ ready }: { ready: boolean }) {
-  const opacity = useRef(new Animated.Value(1)).current;
+  // The Animated.Value is owned by state (created lazily once) so
+  // the JSX can read it without a `.current` access — which the
+  // React Compiler treats as a render-time ref read. `useRef`
+  // would also work but the compiler flags the JSX access either
+  // way; the `useState(() => …)` form is the idiomatic escape.
+  const [opacity] = useState(() => new Animated.Value(1));
   const [phase, setPhase] = useState<'splash' | 'app'>('splash');
 
   useEffect(() => {
@@ -153,7 +161,10 @@ function BootSplash({ ready }: { ready: boolean }) {
     return <AuthNavigator />;
   }
   return (
-    <Animated.View style={{ flex: 1, opacity }} pointerEvents={ready ? 'none' : 'auto'}>
+    <Animated.View
+      style={{ flex: 1, opacity }}
+      pointerEvents={ready ? 'none' : 'auto'}
+    >
       <SplashScreen />
     </Animated.View>
   );

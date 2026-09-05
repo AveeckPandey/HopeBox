@@ -31,9 +31,9 @@
 **Severity:** CRITICAL  
 **Evidence:** `.env` contains real Firebase credentials:
 ```
-EXPO_PUBLIC_FIREBASE_API_KEY=AIzaSyBrBmRCVqEaMMbj-_md5-xgS1ZzfuS3_cI
-EXPO_PUBLIC_FIREBASE_PROJECT_ID=hopebox-buildwithaveeck
-EXPO_PUBLIC_FIREBASE_APP_ID=1:102059668722:web:0834d319d3e07e8d9d0c6b
+EXPO_PUBLIC_FIREBASE_API_KEY=<redacted>
+EXPO_PUBLIC_FIREBASE_PROJECT_ID=<redacted>
+EXPO_PUBLIC_FIREBASE_APP_ID=<redacted>
 ```
 
 **Risk:** 

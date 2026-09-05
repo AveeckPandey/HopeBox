@@ -1,4 +1,4 @@
-import { forwardRef, type ReactNode, type Ref } from 'react';
+import { forwardRef, useMemo, type ReactNode, type Ref } from 'react';
 import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { TextInput, type TextInputProps } from 'react-native-paper';
 import { useAppTheme } from '../theme/AppThemeContext';
@@ -10,6 +10,11 @@ type Props = TextInputProps & {
   style?: StyleProp<ViewStyle>;
   right?: ReactNode;
   left?: ReactNode;
+  // P32: optional minimum height. Used by RecipientModal in
+  // simple mode and by any future low-literacy form. When set,
+  // it bumps the inner input's `minHeight` so the touch target
+  // matches the rest of the simple-mode CTAs.
+  minHeight?: number;
 };
 
 // Drop-in replacement for Paper's TextInput that bakes in our theme
@@ -27,12 +32,13 @@ const ThemedTextInput = forwardRef(function ThemedTextInput(
     contentStyle,
     right,
     left,
+    minHeight,
     ...rest
   }: Props,
   ref: Ref<unknown>
 ) {
   const { theme } = useAppTheme();
-  const styles = createStyles(theme);
+  const styles = useMemo(() => createStyles(theme), [theme]);
 
   return (
     <View style={[styles.wrap, style]}>
@@ -52,7 +58,7 @@ const ThemedTextInput = forwardRef(function ThemedTextInput(
         placeholderTextColor={theme.muted}
         right={right}
         left={left}
-        style={styles.input}
+        style={[styles.input, minHeight ? { minHeight } : null]}
         contentStyle={contentStyle}
         theme={{
           colors: {

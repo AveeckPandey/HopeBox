@@ -197,6 +197,7 @@ function createStyles(theme) {
       width: '100%',
       maxWidth: layout.maxContentWidth,
       alignSelf: 'center',
+      alignItems: 'center',
       padding: spacing.lg,
     },
     overlay: {
@@ -227,7 +228,9 @@ function createStyles(theme) {
     scanFrame: {
       width: 240,
       height: 240,
+      alignSelf: 'center',
       marginBottom: spacing.xl,
+      marginTop: spacing.md,
     },
     corner: {
       position: 'absolute',

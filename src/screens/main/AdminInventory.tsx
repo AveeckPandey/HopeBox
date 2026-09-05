@@ -50,23 +50,24 @@ export default function AdminInventory() {
     const unsubscribe = onSnapshot(
       ref,
       (snap) => {
-        if (snap.exists()) {
-          const data = snap.data();
-          const next = {};
-          for (const c of commodities) {
-            const v = data[c.id];
-            // New shape: contents map keyed by commodityId (flat number).
-            if (typeof v === 'number') {
-              next[c.id] = String(v);
-              continue;
-            }
-            // Legacy shape: rice/dal/sachets fields.
-            if (c.id === 'commodity_rice' && data.rice != null) next[c.id] = String(data.rice);
-            else if (c.id === 'commodity_dal' && data.dal != null) next[c.id] = String(data.dal);
-            else if (c.id === 'commodity_sachets' && data.sachets != null) next[c.id] = String(data.sachets);
-          }
-          setContents((prev) => ({ ...next, ...prev }));
+        const next = {};
+        if (!snap.exists()) {
+          setContents(next);
+          return;
         }
+
+        const data = snap.data();
+        for (const c of commodities) {
+          const v = data[c.id];
+          if (typeof v === 'number') {
+            next[c.id] = String(v);
+            continue;
+          }
+          if (c.id === 'commodity_rice' && data.rice != null) next[c.id] = String(data.rice);
+          else if (c.id === 'commodity_dal' && data.dal != null) next[c.id] = String(data.dal);
+          else if (c.id === 'commodity_sachets' && data.sachets != null) next[c.id] = String(data.sachets);
+        }
+        setContents(next);
       },
       (err) => {
         logger.logWarning('AdminInventory/snapshot', err.message);

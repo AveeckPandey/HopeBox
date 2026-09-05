@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { TextInput } from 'react-native-paper';
 import { signOut } from 'firebase/auth';
@@ -11,6 +12,7 @@ import { useAppTheme } from '../../theme/AppThemeContext';
 import { useWarehouse } from '../../contexts/WarehouseContext';
 import { useUser } from '../../contexts/UserContext';
 import { useCommodities, useTemplates } from '../../contexts/CommoditiesContext';
+import { useSimpleMode } from '../../contexts/SimpleModeContext';
 import {
   boxesByEarliestExpiry,
   chartRowsForTemplate,
@@ -39,14 +41,30 @@ export default function Dashboard({ navigation }) {
   const { userData } = useUser();
   const { commodities, byId } = useCommodities();
   const { defaultTemplate } = useTemplates();
+  const { scale: simpleScale } = useSimpleMode();
   const { t: tAll } = useLanguage();
   const t = tAll('dashboard');
   const tCommon = tAll('common');
 
   const [inventory, setInventory] = useState({});
   const [boxes, setBoxes] = useState([]);
-  const [targetBoxes, setTargetBoxes] = useState('100');
-  const styles = useMemo(() => createStyles(theme), [theme]);
+  const [targetBoxes, setTargetBoxes] = useState('');
+  const styles = useMemo(() => createStyles(theme, simpleScale), [theme, simpleScale]);
+
+  useEffect(() => {
+    const loadTarget = async () => {
+      const stored = await AsyncStorage.getItem('hopebox-target-boxes');
+      if (stored != null && stored !== '') {
+        setTargetBoxes(stored.replace(/[^0-9]/g, ''));
+      }
+    };
+    void loadTarget();
+  }, []);
+
+  useEffect(() => {
+    if (targetBoxes === '') return;
+    void AsyncStorage.setItem('hopebox-target-boxes', targetBoxes);
+  }, [targetBoxes]);
 
   useEffect(() => {
     const inventoryId = currentWarehouse?.id || 'main';
@@ -127,26 +145,33 @@ export default function Dashboard({ navigation }) {
     () => shortageForTarget(inventory, templateCommodities, targetNum),
     [inventory, templateCommodities, targetNum]
   );
-  const completionRate = Math.min((possibleBoxes / Math.max(targetNum, 1)) * 100, 100);
+  const completionRate = targetNum > 0 ? Math.min((possibleBoxes / targetNum) * 100, 100) : 0;
+  const hasLiveInventory = useMemo(
+    () => Object.values(inventory).some((value) => Number(value) > 0),
+    [inventory]
+  );
 
   // Chart rows for the live-inventory card, pulled from the live
   // commodity catalog so it works for any sector (food, medical, hygiene).
   const chartData = useMemo(
-    () => chartRowsForTemplate(inventory, templateCommodities).map((row) => {
-      const c = byId[row.commodityId] || { name: row.commodityId, unit: '', color: theme.primary };
-      return {
-        id: row.commodityId,
-        label: c.name,
-        value: row.onHand,
-        requiredPerBox: row.requiredPerBox,
-        shortage: shortageMap[row.commodityId] || 0,
-        unit: c.unit,
-        color: c.color || theme.primary,
-      };
-    }),
-    [inventory, templateCommodities, byId, shortageMap, theme.primary]
+    () => {
+      if (!hasLiveInventory) return [];
+      return chartRowsForTemplate(inventory, templateCommodities).map((row) => {
+        const c = byId[row.commodityId] || { name: row.commodityId, unit: '', color: theme.primary };
+        return {
+          id: row.commodityId,
+          label: c.name,
+          value: row.onHand,
+          requiredPerBox: row.requiredPerBox,
+          shortage: shortageMap[row.commodityId] || 0,
+          unit: c.unit,
+          color: c.color || theme.primary,
+        };
+      });
+    },
+    [hasLiveInventory, inventory, templateCommodities, byId, shortageMap, theme.primary]
   );
-  const maxChartValue = Math.max(...chartData.map((item) => item.value), 1);
+  const maxChartValue = chartData.length > 0 ? Math.max(...chartData.map((item) => item.value), 1) : 1;
 
   // FEFO awareness: for each commodity with expiry-tracking, surface
   // the next box that's about to expire in this warehouse.
@@ -501,6 +526,7 @@ export default function Dashboard({ navigation }) {
                     label={tile.label}
                     onPress={tile.onPress}
                     primary={tile.primary}
+                    minHeight={styles.actionMinHeight}
                   />
                 ))}
               </View>
@@ -519,6 +545,7 @@ function ThemedTargetInput({ value, onChange, theme, styles }) {
       value={value}
       onChangeText={(text) => onChange(text.replace(/[^0-9]/g, ''))}
       keyboardType="numeric"
+      placeholder="Target boxes"
       style={styles.input}
       outlineColor={theme.border}
       activeOutlineColor={theme.primary}
@@ -536,7 +563,7 @@ function ThemedTargetInput({ value, onChange, theme, styles }) {
   );
 }
 
-function ActionTile({ theme, icon, label, onPress, primary }) {
+function ActionTile({ theme, icon, label, onPress, primary, minHeight = 52 }) {
   return (
     <Pressable
       onPress={onPress}
@@ -549,7 +576,7 @@ function ActionTile({ theme, icon, label, onPress, primary }) {
           gap: spacing.md,
           paddingHorizontal: spacing.lg,
           paddingVertical: spacing.md,
-          minHeight: 52,
+          minHeight,
           borderRadius: radius.md,
           borderWidth: 1,
           backgroundColor: primary ? theme.primary : theme.surfaceRaised,
@@ -580,8 +607,15 @@ function ActionTile({ theme, icon, label, onPress, primary }) {
   );
 }
 
-function createStyles(theme) {
-  return StyleSheet.create({
+function createStyles(theme, simpleScale = 1) {
+  // P32: simple mode bumps the action-tile minHeight so the
+  // primary touch targets on the home screen are easier to
+  // hit for low-literacy field staff. Returned alongside the
+  // StyleSheet as a bare number — StyleSheet.create's inferred
+  // type only allows style values, so a raw number doesn't
+  // belong inside it.
+  const actionMinHeight = Math.round(52 * simpleScale);
+  const styles = StyleSheet.create({
     screen: { flex: 1, backgroundColor: theme.background },
     scrollContent: { paddingBottom: spacing.xxl },
     contentWrap: {
@@ -675,4 +709,5 @@ function createStyles(theme) {
     requirementGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
     actionGrid: { gap: spacing.md },
   });
+  return { ...styles, actionMinHeight: actionMinHeight as number };
 }

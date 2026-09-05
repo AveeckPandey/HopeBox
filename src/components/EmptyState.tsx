@@ -24,7 +24,7 @@ export default function EmptyState({
   style,
 }: Props) {
   const { theme } = useAppTheme();
-  const styles = createStyles(theme);
+  const styles = React.useMemo(() => createStyles(theme), [theme]);
 
   return (
     <View

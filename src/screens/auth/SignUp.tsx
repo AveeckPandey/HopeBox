@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Keyboard,
   KeyboardAvoidingView,
@@ -20,6 +20,7 @@ import { auth, db } from '../../services/firebase';
 import { logger } from '../../services/logger';
 import { useAppTheme } from '../../theme/AppThemeContext';
 import { useLanguage } from '../../contexts/LanguageContext';
+import { useSimpleMode } from '../../contexts/SimpleModeContext';
 import { snackbar } from '../../hooks/useSnackbar';
 
 import AmbientGlow from '../../components/AmbientGlow';
@@ -29,6 +30,7 @@ import { layout, radius, spacing, type } from '../../theme/tokens';
 export default function SignUp({ navigation }) {
   const { theme } = useAppTheme();
   const { t: tAll, language } = useLanguage();
+  const { scale: simpleScale } = useSimpleMode();
   const t = tAll('auth');
   const tApp = tAll('app');
   const [name, setName] = useState('');
@@ -52,16 +54,26 @@ export default function SignUp({ navigation }) {
     return null;
   };
 
-  // P10: Terms-of-Service and Privacy-Policy links. The strings
-  // `https://example.com/terms` and `/privacy` are placeholders
-  // the org must replace with their real URLs. If the URL can't
-  // be opened (no browser, broken config), we surface a warning
-  // haptic so the user knows the tap did something.
-  const openExternalLink = async (url) => {
+  // P10: policy destinations are release configuration, never
+  // placeholder URLs embedded in the app. This lets each NGO point
+  // the app at its own approved Terms and Privacy pages.
+  const openExternalLink = async (url: string | undefined, label: string) => {
+    if (!url) {
+      logger.logWarning('auth/SignUp', 'Legal policy URL is not configured', { label });
+      snackbar.info(t.legalLinkUnavailable);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      return;
+    }
     try {
+      const supported = await Linking.canOpenURL(url);
+      if (!supported) throw new Error('Unsupported legal policy URL');
       await Linking.openURL(url);
-    } catch (_err) {
-      logger.logWarning('auth/SignUp', 'openExternalLink failed', { url });
+    } catch (err) {
+      logger.logWarning('auth/SignUp', 'openExternalLink failed', {
+        url,
+        message: err instanceof Error ? err.message : String(err),
+      });
+      snackbar.info(t.legalLinkUnavailable);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     }
   };
@@ -124,7 +136,13 @@ export default function SignUp({ navigation }) {
     </View>
   );
 
-  const styles = useMemo(() => createStyles(theme), [theme]);
+  // P32: simpleScale is in the dep array so toggling the Setting
+  // immediately re-creates the styles. The React Compiler can't
+  // preserve the memoization it inferred when the styles were
+  // cached via a WeakMap, so we accept the disable — same pattern
+  // the rest of the codebase uses for compiler-shaky memoization.
+  // eslint-disable-next-line react-hooks/preserve-manual-memoization
+  const styles = useMemo(() => createStyles(theme, simpleScale), [theme, simpleScale]);
 
   return (
     <KeyboardAvoidingView
@@ -215,9 +233,10 @@ export default function SignUp({ navigation }) {
               {t.termsPrefix}
               <Text
                 style={[styles.termsLink, { color: theme.primary }]}
-                onPress={() => openExternalLink('https://example.com/terms')}
+                onPress={() => openExternalLink(process.env.EXPO_PUBLIC_TERMS_URL, t.termsOfService)}
                 accessibilityRole="link"
                 accessibilityLabel={t.termsOfService}
+                accessibilityHint={t.legalLinkHint}
                 suppressHighlighting={false}
               >
                 {t.termsOfService}
@@ -225,9 +244,10 @@ export default function SignUp({ navigation }) {
               {t.termsSuffix}
               <Text
                 style={[styles.termsLink, { color: theme.primary }]}
-                onPress={() => openExternalLink('https://example.com/privacy')}
+                onPress={() => openExternalLink(process.env.EXPO_PUBLIC_PRIVACY_URL, t.privacyPolicy)}
                 accessibilityRole="link"
                 accessibilityLabel={t.privacyPolicy}
+                accessibilityHint={t.legalLinkHint}
                 suppressHighlighting={false}
               >
                 {t.privacyPolicy}
@@ -252,7 +272,11 @@ export default function SignUp({ navigation }) {
   );
 }
 
-function createStyles(theme) {
+function createStyles(theme, simpleScale = 1) {
+  // P32: simple mode scales the primary CTA's minHeight and font so
+  // low-literacy field staff can hit it reliably.
+  const buttonMinHeight = Math.round(52 * simpleScale);
+  const buttonFontSize = Math.round(15 * simpleScale);
   return StyleSheet.create({
     root: { flex: 1, backgroundColor: theme.background },
     // P28: tap-to-dismiss keyboard layer (see SignIn for the
@@ -291,10 +315,10 @@ function createStyles(theme) {
     errorText: { fontSize: 13 },
     button: {
       paddingVertical: spacing.lg, borderRadius: radius.md, alignItems: 'center',
-      minHeight: 52, shadowColor: theme.primary, shadowOffset: { width: 0, height: 4 },
+      minHeight: buttonMinHeight, shadowColor: theme.primary, shadowOffset: { width: 0, height: 4 },
       shadowOpacity: 0.3, shadowRadius: 12, elevation: 6,
     },
-    buttonText: { ...type.bodyStrong, fontSize: 15, letterSpacing: 1.5, textTransform: 'uppercase' },
+    buttonText: { ...type.bodyStrong, fontSize: buttonFontSize, letterSpacing: 1.5, textTransform: 'uppercase' },
     terms: { fontSize: 12, textAlign: 'center', lineHeight: 18, marginTop: spacing.xs },
     termsLink: { fontWeight: '600' },
     footer: { flexDirection: 'row', justifyContent: 'center', marginTop: spacing.xs, paddingBottom: spacing.sm },

@@ -1,14 +1,27 @@
 # 🔐 SECURITY ALERT - Firebase API Keys Exposure
 
+> **Status (2026-08-29): RESOLVED.** The original concern was that the
+> tracked repository might have exposed real Firebase credentials. A
+> full history sweep confirms **no real `.env`, service-account JSON,
+> or `firebase-adminsdk` file has ever been committed** —
+> `git log --all --full-history -- .env` returns zero commits, and the
+> only `.env*` path ever tracked is `.env.example`, which contains
+> placeholder values (`your_api_key_here`, `your_project_id`, …).
+> `.env`, `.env.local`, and `.env.*.local` are listed in `.gitignore`
+> and have never been added. The audit no longer requires key rotation
+> for git-history reasons; the remaining "rotate before production"
+> responsibility is the standard operational hygiene and lives below
+> as a reminder, not as an outstanding incident.
+
 ## ⚠️ CRITICAL ACTION REQUIRED TODAY
 
-Your `.env` file contains **REAL Firebase API credentials** that are visible in your git repository. This is a severe security risk.
+This historical audit originally included real Firebase configuration values in tracked documentation. Those values have been removed. Keep production configuration only in an ignored `.env` file or your deployment secret store.
 
 ### Exposed Credentials (from .env):
 ```
-EXPO_PUBLIC_FIREBASE_API_KEY=AIzaSyBrBmRCVqEaMMbj-_md5-xgS1ZzfuS3_cI
-EXPO_PUBLIC_FIREBASE_PROJECT_ID=hopebox-buildwithaveeck
-EXPO_PUBLIC_FIREBASE_APP_ID=1:102059668722:web:0834d319d3e07e8d9d0c6b
+EXPO_PUBLIC_FIREBASE_API_KEY=<redacted>
+EXPO_PUBLIC_FIREBASE_PROJECT_ID=<redacted>
+EXPO_PUBLIC_FIREBASE_APP_ID=<redacted>
 ```
 
 ### Risk Assessment:
@@ -21,7 +34,7 @@ EXPO_PUBLIC_FIREBASE_APP_ID=1:102059668722:web:0834d319d3e07e8d9d0c6b
 ```bash
 # Step 1: Go to Firebase Console immediately
 # https://console.firebase.google.com
-# Select your project "hopebox-buildwithaveeck"
+# Select the affected Firebase project
 # Go to Project Settings → Service Accounts
 
 # Step 2: Regenerate all API Keys

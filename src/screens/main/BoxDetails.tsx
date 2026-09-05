@@ -11,6 +11,7 @@ import { useUser } from '../../contexts/UserContext';
 import { useWarehouse } from '../../contexts/WarehouseContext';
 import { useCommodities } from '../../contexts/CommoditiesContext';
 import { useLanguage } from '../../contexts/LanguageContext';
+import { useSimpleMode } from '../../contexts/SimpleModeContext';
 import { logAction } from '../../services/audit';
 import { logger } from '../../services/logger';
 import { snackbar } from '../../hooks/useSnackbar';
@@ -28,6 +29,7 @@ import StatusBadge from '../../components/StatusBadge';
 import EmptyState from '../../components/EmptyState';
 import FadeInUp from '../../components/FadeInUp';
 import AmbientGlow from '../../components/AmbientGlow';
+import RecipientModal, { type RecipientValue } from '../../components/RecipientModal';
 import { layout, radius, spacing, type } from '../../theme/tokens';
 
 export default function BoxDetails({ route, navigation }) {
@@ -36,11 +38,20 @@ export default function BoxDetails({ route, navigation }) {
   const { currentWarehouse } = useWarehouse();
   const { commodities, byId } = useCommodities();
   const { t: tAll } = useLanguage();
+  const { scale: simpleScale } = useSimpleMode();
   const t = tAll('boxDetails');
   const tCommon = tAll('common');
   const [scanHistory, setScanHistory] = useState([]);
   const [busy, setBusy] = useState(false);
-  const styles = useMemo(() => createStyles(theme), [theme]);
+  // P33: recipient capture at dispatch. The modal opens when the
+  // user taps Dispatch, and the trimmed value flows into
+  // `performStatusChange` which writes it to the box doc inside
+  // the same runTransaction that flips the status. A `null`
+  // `recipientModalOpen` means "no modal showing"; we also keep
+  // the staging value so a re-dispatch pre-fills the previous
+  // recipient.
+  const [recipientModalOpen, setRecipientModalOpen] = useState(false);
+  const styles = useMemo(() => createStyles(theme, simpleScale), [theme, simpleScale]);
 
   // Read the route param up front. Hooks below need to reference it,
   // so we can't early-return before the hooks — we keep `routeItem`
@@ -134,7 +145,7 @@ export default function BoxDetails({ route, navigation }) {
     }
   };
 
-  const applyInventoryChange = async (nextStatus) => {
+  const applyInventoryChange = async (nextStatus, recipient) => {
     const boxRef = doc(db, 'boxes', item.id);
     const inventoryRef = doc(db, 'inventory', inventoryDocId);
 
@@ -174,22 +185,39 @@ export default function BoxDetails({ route, navigation }) {
         }
       }
       transaction.set(inventoryRef, { ...nextInventory, updatedAt: Timestamp.now() });
-      transaction.update(boxRef, { status: nextStatus });
+      // P33: persist recipient + dispatch timestamp on the box.
+      // Both go in the same transaction so a half-dispatched box
+      // (status flipped but recipient missing) is impossible. We
+      // also stamp `dispatchedAt` once — a return does NOT clear
+      // it, since donor reports want the original distribution
+      // date even if the box came back to storage.
+      const update: Record<string, unknown> = { status: nextStatus };
+      if (nextStatus === 'dispatched') {
+        if (recipient) {
+          update.recipient = recipient.name || null;
+          update.recipientContact = recipient.contact || null;
+        }
+        if (!currentBox.dispatchedAt) {
+          update.dispatchedAt = Timestamp.now();
+        }
+      }
+      transaction.update(boxRef, update);
     });
   };
 
-  const performStatusChange = async (nextStatus) => {
+  const performStatusChange = async (nextStatus, recipient) => {
     if (busy) return;
     setBusy(true);
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       const location = await getCurrentLocation();
-      await applyInventoryChange(nextStatus);
+      await applyInventoryChange(nextStatus, recipient);
       await addDoc(collection(db, 'boxes', item.id, 'scanHistory'), {
         action: nextStatus,
         userId: userData?.id || 'unknown',
         userName: userData?.name || 'Unknown',
         location,
+        recipient: recipient?.name || null,
         timestamp: Timestamp.now(),
       });
       await logAction(`box_${nextStatus}`, { boxId: item.id, location }, userData?.id);
@@ -218,15 +246,45 @@ export default function BoxDetails({ route, navigation }) {
   const confirmStatusChange = (nextStatus) => {
     if (busy) return;
     const isDispatch = nextStatus === 'dispatched';
+    // P33: capture the recipient *before* the destructive
+    // confirmation. Otherwise the user has to confirm "are you
+    // sure you want to dispatch?" and then answer "to whom?" —
+    // which is the wrong order, because by the time they reach
+    // the modal they've already committed to the action.
+    if (isDispatch) {
+      setRecipientModalOpen(true);
+      return;
+    }
     Alert.alert(
-      isDispatch ? t.dispatchConfirmTitle : t.returnConfirmTitle,
-      isDispatch ? t.dispatchConfirmMessage : t.returnConfirmMessage,
+      t.returnConfirmTitle,
+      t.returnConfirmMessage,
       [
         { text: tCommon.cancel, style: 'cancel' },
         {
-          text: isDispatch ? t.dispatch : t.return,
-          style: isDispatch ? 'destructive' : 'default',
-          onPress: () => performStatusChange(nextStatus),
+          text: t.return,
+          style: 'default',
+          onPress: () => performStatusChange(nextStatus, null),
+        },
+      ]
+    );
+  };
+
+  // P33: handle the recipient modal's "Continue" / "Skip" tap.
+  // Both close the modal and proceed to the destructive
+  // confirmation. Skipping is equivalent to passing empty
+  // recipient strings; donor reports will then show "unknown
+  // recipient" for that row.
+  const handleRecipientConfirm = (value: RecipientValue) => {
+    setRecipientModalOpen(false);
+    Alert.alert(
+      t.dispatchConfirmTitle,
+      t.dispatchConfirmMessage,
+      [
+        { text: tCommon.cancel, style: 'cancel' },
+        {
+          text: t.dispatch,
+          style: 'destructive',
+          onPress: () => performStatusChange('dispatched', value),
         },
       ]
     );
@@ -340,6 +398,26 @@ export default function BoxDetails({ route, navigation }) {
               {item.donorName ? (
                 <InfoRow styles={styles} theme={theme} label="Donor" value={item.donorName} />
               ) : null}
+              {/* P33: surface the recipient on the card after
+                  dispatch. The card is the source of truth for
+                  "this box is currently distributed to X" — the
+                  scan history list keeps the same value for the
+                  audit trail. */}
+              {item.recipient ? (
+                <InfoRow
+                  styles={styles}
+                  theme={theme}
+                  label={t.recipientField}
+                  value={item.recipientContact ? `${item.recipient} · ${item.recipientContact}` : item.recipient}
+                />
+              ) : item.status === 'dispatched' ? (
+                <InfoRow
+                  styles={styles}
+                  theme={theme}
+                  label={t.recipientField}
+                  value={t.recipientEmpty}
+                />
+              ) : null}
 
               <View style={[styles.statusBlock, { backgroundColor: theme.primarySoft, borderColor: theme.border }]}>
                 <Text style={[styles.statusBlockLabel, { color: theme.muted }]}>{t.currentStatus}</Text>
@@ -416,6 +494,16 @@ export default function BoxDetails({ route, navigation }) {
           </FadeInUp>
         </View>
       </ScrollView>
+      {/* P33: recipient capture at dispatch. Lives at the screen
+          root (not inside the ScrollView) so the slide-up modal
+          is unaffected by keyboard avoidance on the card. */}
+      <RecipientModal
+        visible={recipientModalOpen}
+        defaultName={item.recipient || ''}
+        defaultContact={item.recipientContact || ''}
+        onCancel={() => setRecipientModalOpen(false)}
+        onConfirm={handleRecipientConfirm}
+      />
     </View>
   );
 }
@@ -429,7 +517,17 @@ function InfoRow({ theme, label, value, styles }) {
   );
 }
 
-function createStyles(theme) {
+function createStyles(theme, simpleScale = 1) {
+  // P32: simple-mode scaling. The three action buttons
+  // (Dispatch / Return / Delete) and the status block all
+  // grow proportionally to the scale factor (1.25x when on).
+  // We do this here rather than in inline style overrides so
+  // every subsequent re-render gets the same StyleSheet
+  // reference and doesn't churn child components.
+  const actionMinHeight = Math.round(52 * simpleScale);
+  const dangerMinHeight = Math.round(48 * simpleScale);
+  const actionPaddingV = Math.round(12 * simpleScale);
+
   return StyleSheet.create({
     screen: { flex: 1, backgroundColor: theme.background },
     scroll: { paddingBottom: spacing.xxl },
@@ -477,9 +575,9 @@ function createStyles(theme) {
       alignItems: 'center',
       justifyContent: 'center',
       gap: spacing.sm,
-      paddingVertical: spacing.md,
+      paddingVertical: actionPaddingV,
       borderRadius: radius.md,
-      minHeight: 52,
+      minHeight: actionMinHeight,
     },
     primaryButtonText: { ...type.bodyStrong, textTransform: 'uppercase', letterSpacing: 1.5 },
     secondaryButton: {
@@ -487,10 +585,10 @@ function createStyles(theme) {
       alignItems: 'center',
       justifyContent: 'center',
       gap: spacing.sm,
-      paddingVertical: spacing.md,
+      paddingVertical: actionPaddingV,
       borderRadius: radius.md,
       borderWidth: 1,
-      minHeight: 52,
+      minHeight: actionMinHeight,
       marginTop: spacing.md,
     },
     secondaryButtonText: { ...type.bodyStrong, textTransform: 'uppercase', letterSpacing: 1.5 },
@@ -499,10 +597,10 @@ function createStyles(theme) {
       alignItems: 'center',
       justifyContent: 'center',
       gap: spacing.sm,
-      paddingVertical: spacing.md,
+      paddingVertical: actionPaddingV,
       borderRadius: radius.md,
       borderWidth: 1,
-      minHeight: 48,
+      minHeight: dangerMinHeight,
       marginTop: spacing.md,
     },
     dangerButtonText: { ...type.bodyStrong, textTransform: 'uppercase', letterSpacing: 1.5 },
